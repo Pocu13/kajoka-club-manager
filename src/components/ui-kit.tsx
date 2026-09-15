@@ -163,6 +163,16 @@ export function Toggle({
       />
     </button>
   );
+  if (!label) return knob;
+  return (
+    <div className="flex items-center justify-between gap-4 py-1.5">
+      <div>
+        <div className="text-sm font-medium">{label}</div>
+        {hint && <div className="mt-0.5 text-xs text-muted-foreground">{hint}</div>}
+      </div>
+      {knob}
+    </div>
+  );
 }
 
 export function SegTabs<T extends string>({
