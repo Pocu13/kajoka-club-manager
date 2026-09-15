@@ -329,7 +329,10 @@ function SessionDrawer({
                   variant="outline"
                   onClick={() => {
                     const unpaid = session.players.filter((p) => !p.paid).map((p) => p.id);
-                    if (!unpaid.length) return toast.info("Tutti i giocatori hanno saldato");
+                    if (!unpaid.length) {
+                      toast.info("Tutti i giocatori hanno saldato");
+                      return;
+                    }
                     setPayIds(unpaid);
                     setMethod("contanti");
                     setPayOpen(true);
@@ -341,7 +344,10 @@ function SessionDrawer({
                   variant="primary"
                   onClick={() => {
                     const unpaid = session.players.filter((p) => !p.paid).map((p) => p.id);
-                    if (!unpaid.length) return toast.info("Tutti i giocatori hanno saldato");
+                    if (!unpaid.length) {
+                      toast.info("Tutti i giocatori hanno saldato");
+                      return;
+                    }
                     setPayIds(unpaid);
                     setMethod("carta");
                     setPayOpen(true);
