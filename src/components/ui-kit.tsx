@@ -135,12 +135,16 @@ export function Toggle({
   checked,
   onChange,
   disabled,
+  label,
+  hint,
 }: {
   checked: boolean;
   onChange: (v: boolean) => void;
   disabled?: boolean;
+  label?: string;
+  hint?: string;
 }) {
-  return (
+  const knob = (
     <button
       type="button"
       disabled={disabled}
