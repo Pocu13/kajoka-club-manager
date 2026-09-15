@@ -81,13 +81,13 @@ export interface Transaction {
   card: number;
   operatorId: string;
   operatorName: string;
-  courtId?: string;
-  sessionId?: string;
-  playerName?: string;
+  courtId?: string | undefined;
+  sessionId?: string | undefined;
+  playerName?: string | undefined;
   note: string;
   cancelled: boolean;
-  cancelledAt?: string;
-  cancelReason?: string;
+  cancelledAt?: string | undefined;
+  cancelReason?: string | undefined;
 }
 
 export type CourtType = "padel" | "tennis" | "beach";
