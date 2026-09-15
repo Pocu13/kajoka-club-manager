@@ -50,7 +50,7 @@ export const relativeDay = (iso: string) => {
   const y = new Date(now);
   y.setDate(y.getDate() - 1);
   if (sameDay(d, y)) return `Ieri · ${fmtTime(iso)}`;
-  return `${d.getDate()} ${MONTHS[d.getMonth()].slice(0, 3)} · ${fmtTime(iso)}`;
+  return `${d.getDate()} ${(MONTHS[d.getMonth()] ?? "").slice(0, 3)} · ${fmtTime(iso)}`;
 };
 
 export const initials = (name: string) =>
