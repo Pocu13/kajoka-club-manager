@@ -128,3 +128,17 @@
     0 0 0 1px rgba(255, 77, 0, 0.35),
     0 8px 30px -10px rgba(255, 77, 0, 0.55);
 }
+
+/* Nasconde badge/banner Lovable */
+#lovable-badge,
+.lovable-badge,
+[id*="lovable-badge"],
+[class*="lovable-badge"],
+a[href*="lovable.dev"],
+a[href*="lovable.app"],
+a[href*="lovable"] {
+  display: none !important;
+  visibility: hidden !important;
+  opacity: 0 !important;
+  pointer-events: none !important;
+}
