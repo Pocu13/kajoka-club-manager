@@ -16,6 +16,8 @@ import { Route as MagazzinoRouteImport } from './routes/magazzino'
 import { Route as MovimentiRouteImport } from './routes/movimenti'
 import { Route as PosRouteImport } from './routes/pos'
 import { Route as ProdottiRouteImport } from './routes/prodotti'
+import { Route as StoricoRouteImport } from './routes/storico'
+import { Route as UtentiRouteImport } from './routes/utenti'
 
 const IndexRoute = IndexRouteImport.update({
   id: '/',
@@ -52,6 +54,16 @@ const ProdottiRoute = ProdottiRouteImport.update({
   path: '/prodotti',
   getParentRoute: () => rootRouteImport,
 } as any)
+const StoricoRoute = StoricoRouteImport.update({
+  id: '/storico',
+  path: '/storico',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const UtentiRoute = UtentiRouteImport.update({
+  id: '/utenti',
+  path: '/utenti',
+  getParentRoute: () => rootRouteImport,
+} as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
@@ -61,6 +73,8 @@ export interface FileRoutesByFullPath {
   '/movimenti': typeof MovimentiRoute
   '/pos': typeof PosRoute
   '/prodotti': typeof ProdottiRoute
+  '/storico': typeof StoricoRoute
+  '/utenti': typeof UtentiRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
@@ -70,6 +84,8 @@ export interface FileRoutesByTo {
   '/movimenti': typeof MovimentiRoute
   '/pos': typeof PosRoute
   '/prodotti': typeof ProdottiRoute
+  '/storico': typeof StoricoRoute
+  '/utenti': typeof UtentiRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -80,6 +96,8 @@ export interface FileRoutesById {
   '/movimenti': typeof MovimentiRoute
   '/pos': typeof PosRoute
   '/prodotti': typeof ProdottiRoute
+  '/storico': typeof StoricoRoute
+  '/utenti': typeof UtentiRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
@@ -91,6 +109,8 @@ export interface FileRouteTypes {
     | '/movimenti'
     | '/pos'
     | '/prodotti'
+    | '/storico'
+    | '/utenti'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
@@ -100,6 +120,8 @@ export interface FileRouteTypes {
     | '/movimenti'
     | '/pos'
     | '/prodotti'
+    | '/storico'
+    | '/utenti'
   id:
     | '__root__'
     | '/'
@@ -109,6 +131,8 @@ export interface FileRouteTypes {
     | '/movimenti'
     | '/pos'
     | '/prodotti'
+    | '/storico'
+    | '/utenti'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -119,6 +143,8 @@ export interface RootRouteChildren {
   MovimentiRoute: typeof MovimentiRoute
   PosRoute: typeof PosRoute
   ProdottiRoute: typeof ProdottiRoute
+  StoricoRoute: typeof StoricoRoute
+  UtentiRoute: typeof UtentiRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -172,6 +198,20 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ProdottiRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/storico': {
+      id: '/storico'
+      path: '/storico'
+      fullPath: '/storico'
+      preLoaderRoute: typeof StoricoRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/utenti': {
+      id: '/utenti'
+      path: '/utenti'
+      fullPath: '/utenti'
+      preLoaderRoute: typeof UtentiRouteImport
+      parentRoute: typeof rootRouteImport
+    }
   }
 }
 
@@ -183,6 +223,8 @@ const rootRouteChildren: RootRouteChildren = {
   MovimentiRoute: MovimentiRoute,
   PosRoute: PosRoute,
   ProdottiRoute: ProdottiRoute,
+  StoricoRoute: StoricoRoute,
+  UtentiRoute: UtentiRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)
