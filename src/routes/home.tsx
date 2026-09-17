@@ -165,7 +165,9 @@ function HomePage() {
                       s ? "bg-primary" : "bg-success",
                     )}
                   />
-                  <span className="text-[9px] font-bold uppercase sm:text-[11px]">{c.name}</span>
+                  <span className="text-[9px] font-bold uppercase sm:text-[11px]">
+                    {c.name}
+                  </span>
                   <span
                     className={cn(
                       "mono hidden text-[10px] sm:inline",
@@ -177,15 +179,6 @@ function HomePage() {
                 </button>
               );
             })}
-          </div>
-          <div className="absolute bottom-2 left-2 flex items-center gap-2 rounded-lg border border-border-strong bg-surface/90 px-2 py-1.5 backdrop-blur sm:bottom-4 sm:left-4 sm:gap-4 sm:px-4 sm:py-2">
-            <span className="mono flex items-center gap-2 text-xs text-success">
-              <span className="size-2 rounded-full bg-success" /> LIBERO ({free})
-            </span>
-            <span className="text-border-strong">|</span>
-            <span className="mono flex items-center gap-2 text-xs text-primary">
-              <span className="size-2 rounded-full bg-primary" /> OCCUPATO ({occupied})
-            </span>
           </div>
         </Panel>
       ) : (
@@ -209,13 +202,19 @@ function HomePage() {
                     {s ? "OCCUPATO" : "LIBERO"}
                   </Badge>
                 </div>
-                <div className="label-caps mt-1 text-muted-foreground">{c.type}</div>
+                <div className="label-caps mt-1 text-muted-foreground">
+                  {c.type}
+                </div>
                 <div className="mono mt-4 text-sm">
                   {s ? (
                     <>
                       dalle {fmtTime(s.startedAt)} · {s.players.length} giocatori
                       <div className="mt-1 text-primary">
-                        {eur(s.players.filter((p) => p.paid).reduce((a, p) => a + p.quota, 0))}{" "}
+                        {eur(
+                          s.players
+                            .filter((p) => p.paid)
+                            .reduce((a, p) => a + p.quota, 0),
+                        )}{" "}
                         / {eur(s.total)}
                       </div>
                     </>
@@ -241,7 +240,10 @@ function HomePage() {
           <Users2 className="size-4" /> Apri sessione campo
         </Btn>
         {lowStock > 0 && (
-          <Link to="/magazzino" className="col-span-2 flex min-w-0 items-center gap-2 sm:gap-3">
+          <Link
+            to="/magazzino"
+            className="col-span-2 flex min-w-0 items-center gap-2 sm:gap-3"
+          >
             <Badge tone="warning">
               <AlertTriangle className="size-3" /> {lowStock} prodotti sottoscorta
             </Badge>
@@ -281,7 +283,9 @@ function getRomeHour() {
     timeZone: "Europe/Rome",
     hour: "2-digit",
     hourCycle: "h23",
-  }).formatToParts(new Date()).find((part) => part.type === "hour")?.value;
+  })
+    .formatToParts(new Date())
+    .find((part) => part.type === "hour")?.value;
   return Number(hour ?? new Date().getHours());
 }
 
@@ -308,8 +312,13 @@ function SessionDrawer({
 
   if (!court) return null;
 
-  const player = session?.players.find((p) => p.id === selPlayer) ?? session?.players[0] ?? null;
-  const quickExtras = db.products.filter((p) => p.posVisible && p.active).slice(0, 6);
+  const player =
+    session?.players.find((p) => p.id === selPlayer) ??
+    session?.players[0] ??
+    null;
+  const quickExtras = db.products
+    .filter((p) => p.posVisible && p.active)
+    .slice(0, 6);
 
   const playerTotal = (pid: string) => {
     const p = session?.players.find((x) => x.id === pid);
@@ -352,7 +361,9 @@ function SessionDrawer({
                 <Btn
                   variant="outline"
                   onClick={() => {
-                    const unpaid = session.players.filter((p) => !p.paid).map((p) => p.id);
+                    const unpaid = session.players
+                      .filter((p) => !p.paid)
+                      .map((p) => p.id);
                     if (!unpaid.length) {
                       toast.info("Tutti i giocatori hanno saldato");
                       return;
@@ -367,7 +378,9 @@ function SessionDrawer({
                 <Btn
                   variant="primary"
                   onClick={() => {
-                    const unpaid = session.players.filter((p) => !p.paid).map((p) => p.id);
+                    const unpaid = session.players
+                      .filter((p) => !p.paid)
+                      .map((p) => p.id);
                     if (!unpaid.length) {
                       toast.info("Tutti i giocatori hanno saldato");
                       return;
@@ -410,9 +423,12 @@ function SessionDrawer({
           <div className="space-y-4">
             <Panel className="p-4">
               <div className="label-caps text-muted-foreground">Tariffa campo</div>
-              <div className="mono mt-1 text-2xl font-bold">{eur(court.hourlyPrice)}</div>
+              <div className="mono mt-1 text-2xl font-bold">
+                {eur(court.hourlyPrice)}
+              </div>
               <div className="mt-1 text-xs text-muted-foreground">
-                Tipologia: {court.type} · durata standard {db.settings.defaultDuration}′
+                Tipologia: {court.type} · durata standard{" "}
+                {db.settings.defaultDuration}′
               </div>
             </Panel>
             <p className="text-sm text-muted-foreground">
@@ -429,7 +445,9 @@ function SessionDrawer({
                 </span>
                 <span className="mono text-sm">
                   <b>{eur(collected)}</b>{" "}
-                  <span className="text-muted-foreground">/ {eur(session.total)}</span>
+                  <span className="text-muted-foreground">
+                    / {eur(session.total)}
+                  </span>
                 </span>
               </div>
               <div className="mt-3 h-2 overflow-hidden rounded-full bg-surface-highest">
@@ -443,11 +461,13 @@ function SessionDrawer({
               <div className="mt-2 flex justify-between text-xs">
                 <span className="text-muted-foreground">
                   {session.players.length} giocatori · modalità{" "}
-                  {session.pricingMode === "campo" ? "prezzo campo" : "quota giocatore"}
+                  {session.pricingMode === "campo"
+                    ? "prezzo campo"
+                    : "quota giocatore"}
                 </span>
                 <span className="text-success">
-                  {session.players.filter((p) => p.paid).length}/{session.players.length}{" "}
-                  saldati
+                  {session.players.filter((p) => p.paid).length}/
+                  {session.players.length} saldati
                 </span>
               </div>
             </Panel>
@@ -499,10 +519,17 @@ function SessionDrawer({
                           {p.id.toUpperCase()}
                         </span>
                         <div className="min-w-0 flex-1">
-                          <div className="truncate text-sm font-semibold">{p.name}</div>
+                          <div className="truncate text-sm font-semibold">
+                            {p.name}
+                          </div>
                           <div className="mono text-[11px] text-muted-foreground">
                             Quota: {eur(p.quota)} · Extra:{" "}
-                            {eur(p.extras.reduce((s, e) => s + e.price * e.qty, 0))}
+                            {eur(
+                              p.extras.reduce(
+                                (s, e) => s + e.price * e.qty,
+                                0,
+                              ),
+                            )}
                           </div>
                         </div>
                         {p.paid ? (
@@ -521,7 +548,10 @@ function SessionDrawer({
                             step="0.5"
                             value={quotaDraft[p.id] ?? String(p.quota)}
                             onChange={(e) =>
-                              setQuotaDraft((q) => ({ ...q, [p.id]: e.target.value }))
+                              setQuotaDraft((q) => ({
+                                ...q,
+                                [p.id]: e.target.value,
+                              }))
                             }
                             className="h-8 w-28"
                           />
@@ -598,7 +628,10 @@ function SessionDrawer({
                     courtSessions.updateQuotas(
                       session.id,
                       Object.fromEntries(
-                        Object.entries(quotaDraft).map(([k, v]) => [k, Number(v) || 0]),
+                        Object.entries(quotaDraft).map(([k, v]) => [
+                          k,
+                          Number(v) || 0,
+                        ]),
                       ),
                     );
                     setEditQuotas(false);
@@ -631,9 +664,15 @@ function SessionDrawer({
                       }}
                       className="rounded-lg border border-border bg-surface-container p-2 text-left transition-colors hover:border-primary/50 hover:bg-surface-high disabled:opacity-40"
                     >
-                      <div className="label-caps text-muted-foreground">{p.category}</div>
-                      <div className="mt-1 truncate text-xs font-semibold">{p.name}</div>
-                      <div className="mono mt-1 text-xs text-primary">{eur(p.price)}</div>
+                      <div className="label-caps text-muted-foreground">
+                        {p.category}
+                      </div>
+                      <div className="mt-1 truncate text-xs font-semibold">
+                        {p.name}
+                      </div>
+                      <div className="mono mt-1 text-xs text-primary">
+                        {eur(p.price)}
+                      </div>
                       <div className="mono text-[10px] text-muted-foreground">
                         {p.stock} disp.
                       </div>
@@ -701,7 +740,10 @@ function SessionDrawer({
               <Field label="Carta">
                 <Input
                   readOnly
-                  value={(Math.max(0, payTotal - (Number(cash) || 0))).toFixed(2)}
+                  value={Math.max(
+                    0,
+                    payTotal - (Number(cash) || 0),
+                  ).toFixed(2)}
                 />
               </Field>
             </div>
@@ -722,11 +764,19 @@ function NewSessionModal({
   preselect?: string | undefined;
 }) {
   const db = useDB();
-  const busy = new Set(db.sessions.filter((s) => !s.closed).map((s) => s.courtId));
+  const busy = new Set(
+    db.sessions.filter((s) => !s.closed).map((s) => s.courtId),
+  );
   const freeCourts = db.courts.filter((c) => !busy.has(c.id));
-  const [courtId, setCourtId] = useState(preselect ?? freeCourts[0]?.id ?? "");
-  const [mode, setMode] = useState<"campo" | "giocatore">(db.settings.defaultPricingMode);
-  const [duration, setDuration] = useState(String(db.settings.defaultDuration));
+  const [courtId, setCourtId] = useState(
+    preselect ?? freeCourts[0]?.id ?? "",
+  );
+  const [mode, setMode] = useState<"campo" | "giocatore">(
+    db.settings.defaultPricingMode,
+  );
+  const [duration, setDuration] = useState(
+    String(db.settings.defaultDuration),
+  );
   const [count, setCount] = useState("4");
   const [names, setNames] = useState<string[]>(["", "", "", ""]);
 
@@ -769,7 +819,9 @@ function NewSessionModal({
       <div className="space-y-4">
         <Field label="Campo">
           <Select value={courtId} onChange={(e) => setCourtId(e.target.value)}>
-            {freeCourts.length === 0 && <option value="">Nessun campo libero</option>}
+            {freeCourts.length === 0 && (
+              <option value="">Nessun campo libero</option>
+            )}
             {freeCourts.map((c) => (
               <option key={c.id} value={c.id}>
                 {c.name} — {eur(c.hourlyPrice)}/ora
@@ -779,7 +831,10 @@ function NewSessionModal({
         </Field>
         <div className="grid grid-cols-2 gap-3">
           <Field label="Durata (min)">
-            <Select value={duration} onChange={(e) => setDuration(e.target.value)}>
+            <Select
+              value={duration}
+              onChange={(e) => setDuration(e.target.value)}
+            >
               <option value="60">60</option>
               <option value="90">90</option>
               <option value="120">120</option>
@@ -834,7 +889,8 @@ function NewSessionModal({
         </div>
         <div className="mono flex items-center justify-between rounded-lg border border-border bg-surface-container p-3">
           <span className="text-sm text-muted-foreground">
-            Totale sessione ({mode === "campo" ? "campo" : "diviso per giocatore"})
+            Totale sessione (
+            {mode === "campo" ? "campo" : "diviso per giocatore"})
           </span>
           <span className="text-lg font-bold">{eur(total)}</span>
         </div>
