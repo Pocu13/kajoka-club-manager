@@ -237,7 +237,7 @@ export function Drawer({
       />
       <aside
         className={cn(
-          "relative flex h-full flex-col border-l border-border bg-surface shadow-2xl",
+          "relative flex h-full max-w-full flex-col border-l border-border bg-surface shadow-2xl",
           width,
         )}
       >
@@ -255,8 +255,8 @@ export function Drawer({
             <X className="size-4" />
           </button>
         </header>
-        <div className="flex-1 overflow-y-auto px-5 py-4">{children}</div>
-        {footer && <div className="border-t border-border px-5 py-4">{footer}</div>}
+        <div className="flex-1 overflow-y-auto px-4 py-4 sm:px-5">{children}</div>
+        {footer && <div className="border-t border-border px-4 py-4 sm:px-5">{footer}</div>}
       </aside>
     </div>
   );
@@ -298,7 +298,7 @@ export function Modal({
         </header>
         <div className="max-h-[70vh] overflow-y-auto px-5 py-4">{children}</div>
         {footer && (
-          <div className="flex justify-end gap-2 border-t border-border px-5 py-4">
+          <div className="flex flex-wrap justify-end gap-2 border-t border-border px-4 py-4 sm:px-5">
             {footer}
           </div>
         )}
@@ -317,12 +317,12 @@ export function PageHeader({
   children?: ReactNode;
 }) {
   return (
-    <div className="flex flex-wrap items-center justify-between gap-4">
-      <div>
-        <h1 className="text-3xl font-bold tracking-tight uppercase">{title}</h1>
+    <div className="grid grid-cols-1 gap-4 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-center">
+      <div className="min-w-0">
+        <h1 className="text-2xl font-bold uppercase sm:text-3xl">{title}</h1>
         {subtitle && <p className="mt-1 text-sm text-muted-foreground">{subtitle}</p>}
       </div>
-      <div className="flex flex-wrap items-center gap-2">{children}</div>
+      <div className="flex min-w-0 flex-wrap items-center gap-2">{children}</div>
     </div>
   );
 }

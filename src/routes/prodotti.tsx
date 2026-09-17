@@ -113,7 +113,7 @@ function ProductsPage() {
         title="Catalogo prodotti"
         subtitle={`${db.products.length} articoli a listino · ${db.products.filter((p) => p.posVisible).length} visibili in cassa`}
       >
-        <div className="relative w-64">
+        <div className="relative w-full sm:w-64">
           <Search className="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-muted-foreground" />
           <Input
             placeholder="Cerca nome o SKU…"
@@ -122,12 +122,12 @@ function ProductsPage() {
             className="pl-9"
           />
         </div>
-        <Select value={cat} onChange={(e) => setCat(e.target.value)} className="w-44">
+        <Select value={cat} onChange={(e) => setCat(e.target.value)} className="min-w-0 flex-1 sm:w-44 sm:flex-none">
           {categories.map((c) => (
             <option key={c}>{c}</option>
           ))}
         </Select>
-        <Btn variant="primary" onClick={openNew}>
+        <Btn variant="primary" onClick={openNew} className="flex-1 sm:flex-none">
           <Plus className="size-4" /> Nuovo prodotto
         </Btn>
       </PageHeader>
@@ -136,7 +136,8 @@ function ProductsPage() {
         {rows.length === 0 ? (
           <EmptyState label="Nessun prodotto trovato." />
         ) : (
-          <div className="overflow-x-auto">
+          <>
+            <div className="hidden overflow-x-auto md:block">
             <table className="w-full text-sm">
               <thead>
                 <tr className="border-b border-border bg-surface-container">
@@ -241,7 +242,45 @@ function ProductsPage() {
                 })}
               </tbody>
             </table>
-          </div>
+            </div>
+            <div className="divide-y divide-border md:hidden">
+            {rows.map((p) => {
+              const st = stockState(p);
+              const margin = p.price > 0 ? ((p.price - p.cost) / p.price) * 100 : 0;
+              return (
+                <article key={p.id} className="p-4">
+                  <div className="grid grid-cols-[minmax(0,1fr)_auto] items-start gap-3">
+                    <div className="flex min-w-0 gap-3">
+                      <span className="text-2xl">{p.emoji}</span>
+                      <div className="min-w-0">
+                        <div className="flex min-w-0 items-center gap-1.5">
+                          <h2 className="truncate text-base font-semibold">{p.name}</h2>
+                          {p.favorite && <Star className="size-3 shrink-0 fill-primary text-primary" />}
+                        </div>
+                        <div className="mono mt-0.5 text-[11px] text-muted-foreground">{p.sku} · {p.category}</div>
+                      </div>
+                    </div>
+                    <Badge tone={st === "ok" ? "success" : st === "sottoscorta" ? "warning" : "danger"} dot>
+                      {st === "ok" ? "OK" : st === "sottoscorta" ? "BASSA" : "ESAURITO"}
+                    </Badge>
+                  </div>
+                  <div className="mt-4 grid grid-cols-3 gap-2 border-y border-border py-3">
+                    <div><div className="label-caps text-muted-foreground">Prezzo</div><div className="mono mt-1 font-bold">{eur(p.price)}</div></div>
+                    <div><div className="label-caps text-muted-foreground">Giacenza</div><div className="mono mt-1">{p.stock} {p.unit}</div></div>
+                    <div><div className="label-caps text-muted-foreground">{isAdmin ? "Margine" : "Cassa"}</div><div className="mono mt-1 text-success">{isAdmin ? pct(margin) : p.posVisible ? "SÌ" : "NO"}</div></div>
+                  </div>
+                  <div className="mt-3 flex items-center justify-between">
+                    <span className="text-xs text-muted-foreground">{p.active ? "Attivo" : "Disattivato"} · {p.posVisible ? "in cassa" : "non in cassa"}</span>
+                    <div className="flex gap-2">
+                      <Btn variant="outline" size="sm" onClick={() => openEdit(p)} aria-label={`Modifica ${p.name}`}><Pencil className="size-3.5" /> Modifica</Btn>
+                      {isAdmin && <Btn variant="subtle" size="sm" onClick={() => setToDelete(p)} aria-label={`Elimina ${p.name}`}><Trash2 className="size-3.5 text-danger" /></Btn>}
+                    </div>
+                  </div>
+                </article>
+              );
+            })}
+            </div>
+          </>
         )}
       </Panel>
 
