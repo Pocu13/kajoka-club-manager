@@ -30,6 +30,18 @@ import mapImage from "@/assets/club-map.jpg";
 import mapDayAsset from "@/assets/mappa_diurna.png.asset.json";
 import mapAfternoonAsset from "@/assets/mappa_pomeriggio.png.asset.json";
 
+const COURT_MAP_POSITIONS: Record<string, { x: number; y: number }> = {
+  PADEL1: { x: 36, y: 59 },
+  PADEL2: { x: 66, y: 66 },
+  PADEL3: { x: 88, y: 56 },
+  BEACH1: { x: 70, y: 16 },
+};
+
+function getCourtMapPosition(court: Court) {
+  const key = court.name.toUpperCase().replace(/[^A-Z0-9]/g, "");
+  return COURT_MAP_POSITIONS[key] ?? { x: court.x, y: court.y };
+}
+
 export const Route = createFileRoute("/home")({
   ssr: false,
   head: () => ({
@@ -147,11 +159,16 @@ function HomePage() {
           <div className="absolute inset-0">
             {db.courts.map((c) => {
               const s = sessionByCourt.get(c.id);
+              const position = getCourtMapPosition(c);
+
               return (
                 <button
                   key={c.id}
                   onClick={() => setSelected(c.id)}
-                  style={{ left: `${c.x}%`, top: `${c.y}%` }}
+                  style={{
+                    left: `${position.x}%`,
+                    top: `${position.y}%`,
+                  }}
                   className={cn(
                     "absolute flex -translate-x-1/2 -translate-y-1/2 items-center gap-1 rounded-lg border px-1.5 py-1 backdrop-blur transition-transform hover:scale-105 sm:gap-2 sm:px-3 sm:py-1.5",
                     s
@@ -286,6 +303,7 @@ function getRomeHour() {
   })
     .formatToParts(new Date())
     .find((part) => part.type === "hour")?.value;
+
   return Number(hour ?? new Date().getHours());
 }
 
@@ -316,6 +334,7 @@ function SessionDrawer({
     session?.players.find((p) => p.id === selPlayer) ??
     session?.players[0] ??
     null;
+
   const quickExtras = db.products
     .filter((p) => p.posVisible && p.active)
     .slice(0, 6);
@@ -325,6 +344,7 @@ function SessionDrawer({
     if (!p) return 0;
     return p.quota + p.extras.reduce((s, e) => s + e.price * e.qty, 0);
   };
+
   const payTotal = payIds.reduce((s, id) => s + playerTotal(id), 0);
   const collected = session
     ? session.players.filter((p) => p.paid).reduce((s, p) => s + p.quota, 0)
@@ -364,10 +384,12 @@ function SessionDrawer({
                     const unpaid = session.players
                       .filter((p) => !p.paid)
                       .map((p) => p.id);
+
                     if (!unpaid.length) {
                       toast.info("Tutti i giocatori hanno saldato");
                       return;
                     }
+
                     setPayIds(unpaid);
                     setMethod("contanti");
                     setPayOpen(true);
@@ -381,10 +403,12 @@ function SessionDrawer({
                     const unpaid = session.players
                       .filter((p) => !p.paid)
                       .map((p) => p.id);
+
                     if (!unpaid.length) {
                       toast.info("Tutti i giocatori hanno saldato");
                       return;
                     }
+
                     setPayIds(unpaid);
                     setMethod("carta");
                     setPayOpen(true);
@@ -495,6 +519,7 @@ function SessionDrawer({
               <div className="space-y-2">
                 {session.players.map((p) => {
                   const active = player?.id === p.id;
+
                   return (
                     <div
                       key={p.id}
@@ -525,10 +550,7 @@ function SessionDrawer({
                           <div className="mono text-[11px] text-muted-foreground">
                             Quota: {eur(p.quota)} · Extra:{" "}
                             {eur(
-                              p.extras.reduce(
-                                (s, e) => s + e.price * e.qty,
-                                0,
-                              ),
+                              p.extras.reduce((s, e) => s + e.price * e.qty, 0),
                             )}
                           </div>
                         </div>
@@ -740,10 +762,7 @@ function SessionDrawer({
               <Field label="Carta">
                 <Input
                   readOnly
-                  value={Math.max(
-                    0,
-                    payTotal - (Number(cash) || 0),
-                  ).toFixed(2)}
+                  value={Math.max(0, payTotal - (Number(cash) || 0)).toFixed(2)}
                 />
               </Field>
             </div>
@@ -768,15 +787,11 @@ function NewSessionModal({
     db.sessions.filter((s) => !s.closed).map((s) => s.courtId),
   );
   const freeCourts = db.courts.filter((c) => !busy.has(c.id));
-  const [courtId, setCourtId] = useState(
-    preselect ?? freeCourts[0]?.id ?? "",
-  );
+  const [courtId, setCourtId] = useState(preselect ?? freeCourts[0]?.id ?? "");
   const [mode, setMode] = useState<"campo" | "giocatore">(
     db.settings.defaultPricingMode,
   );
-  const [duration, setDuration] = useState(
-    String(db.settings.defaultDuration),
-  );
+  const [duration, setDuration] = useState(String(db.settings.defaultDuration));
   const [count, setCount] = useState("4");
   const [names, setNames] = useState<string[]>(["", "", "", ""]);
 
