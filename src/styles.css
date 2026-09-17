@@ -142,3 +142,17 @@ a[href*="lovable"] {
   opacity: 0 !important;
   pointer-events: none !important;
 }
+
+/* Nasconde badge/banner Lovable */
+#lovable-badge,
+.lovable-badge,
+[id*="lovable-badge"],
+[class*="lovable-badge"],
+a[href*="lovable.dev"],
+a[href*="lovable.app"],
+a[href*="lovable"] {
+  display: none !important;
+  visibility: hidden !important;
+  opacity: 0 !important;
+  pointer-events: none !important;
+}
