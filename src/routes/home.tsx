@@ -1,5 +1,5 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 import {
   AlertTriangle,
@@ -30,16 +30,46 @@ import mapImage from "@/assets/club-map.jpg";
 import mapDayAsset from "@/assets/mappa_diurna.png.asset.json";
 import mapAfternoonAsset from "@/assets/mappa_pomeriggio.png.asset.json";
 
-const COURT_MAP_POSITIONS: Record<string, { x: number; y: number }> = {
+// Rapporto della mappa mostrata nello screenshot.
+// Rimane costante per evitare spostamenti delle card durante il resize.
+const MAP_RATIO = 2.02;
+
+const COURT_POSITIONS: Record<string, { x: number; y: number }> = {
+  TENNIS1: { x: 22, y: 33 },
+  BEACH1: { x: 70, y: 16 },
+  BEACH2: { x: 76, y: 32 },
+  BEACH3: { x: 88, y: 41 },
   PADEL1: { x: 36, y: 59 },
   PADEL2: { x: 66, y: 66 },
   PADEL3: { x: 88, y: 56 },
-  BEACH1: { x: 70, y: 16 },
 };
 
-function getCourtMapPosition(court: Court) {
-  const key = court.name.toUpperCase().replace(/[^A-Z0-9]/g, "");
-  return COURT_MAP_POSITIONS[key] ?? { x: court.x, y: court.y };
+function getCourtPosition(court: Court) {
+  const name = court.name
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toUpperCase();
+
+  const type = String(court.type).toUpperCase();
+  const number = name.match(/\d+/)?.[0] ?? "1";
+
+  let family = "";
+
+  if (name.includes("PADEL")) family = "PADEL";
+  else if (name.includes("BEACH") || name.includes("SABBIA")) family = "BEACH";
+  else if (name.includes("TENNIS")) family = "TENNIS";
+  else if (type.includes("PADEL")) family = "PADEL";
+  else if (
+    type.includes("BEACH") ||
+    type.includes("SABBIA") ||
+    type.includes("VOLLEY")
+  ) family = "BEACH";
+  else if (type.includes("TENNIS")) family = "TENNIS";
+
+  return COURT_POSITIONS[`${family}${number}`] ?? {
+    x: court.x,
+    y: court.y,
+  };
 }
 
 export const Route = createFileRoute("/home")({
@@ -69,15 +99,130 @@ export const Route = createFileRoute("/home")({
 function HomePage() {
   const db = useDB();
   const user = useCurrentUser();
+
   const [view, setView] = useState<"3d" | "2d">("3d");
   const [selected, setSelected] = useState<string | null>(null);
   const [newOpen, setNewOpen] = useState(false);
   const [romeHour, setRomeHour] = useState(() => getRomeHour());
+  const [pageHeight, setPageHeight] = useState<number | null>(null);
+  const [mapSize, setMapSize] = useState({ width: 0, height: 0 });
+
+  const pageRef = useRef<HTMLDivElement>(null);
+  const headerRef = useRef<HTMLDivElement>(null);
+  const footerRef = useRef<HTMLDivElement>(null);
+  const mapSpaceRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     const timer = window.setInterval(() => setRomeHour(getRomeHour()), 60_000);
     return () => window.clearInterval(timer);
   }, []);
+
+  // Misura lo spazio reale disponibile nella finestra,
+  // tenendo conto dell'AppShell, dell'intestazione e dei pulsanti.
+  useEffect(() => {
+    const page = pageRef.current;
+    if (!page) return;
+
+    let frame = 0;
+
+    const measure = () => {
+      const viewportHeight =
+        window.visualViewport?.height ?? window.innerHeight;
+
+      let scrollOffset = window.scrollY;
+      let ancestor = page.parentElement;
+
+      while (ancestor) {
+        if (
+          ancestor !== document.body &&
+          ancestor !== document.documentElement
+        ) {
+          scrollOffset += ancestor.scrollTop;
+        }
+        ancestor = ancestor.parentElement;
+      }
+
+      const pageTop = Math.max(
+        0,
+        page.getBoundingClientRect().top + scrollOffset,
+      );
+
+      const headerHeight = headerRef.current?.offsetHeight ?? 0;
+      const footerHeight = footerRef.current?.offsetHeight ?? 0;
+
+      // Su finestre eccezionalmente basse resta possibile scorrere,
+      // senza sovrapporre o nascondere i comandi.
+      const minimumHeight = headerHeight + footerHeight + 24 + 80;
+      const availableHeight = Math.floor(viewportHeight - pageTop - 16);
+
+      const nextHeight = Math.max(minimumHeight, availableHeight);
+
+      setPageHeight((current) =>
+        current === nextHeight ? current : nextHeight,
+      );
+    };
+
+    const scheduleMeasure = () => {
+      window.cancelAnimationFrame(frame);
+      frame = window.requestAnimationFrame(measure);
+    };
+
+    const observer = new ResizeObserver(scheduleMeasure);
+
+    observer.observe(page);
+    if (headerRef.current) observer.observe(headerRef.current);
+    if (footerRef.current) observer.observe(footerRef.current);
+    if (page.parentElement) observer.observe(page.parentElement);
+
+    window.addEventListener("resize", scheduleMeasure);
+    window.visualViewport?.addEventListener("resize", scheduleMeasure);
+
+    scheduleMeasure();
+
+    return () => {
+      window.cancelAnimationFrame(frame);
+      observer.disconnect();
+      window.removeEventListener("resize", scheduleMeasure);
+      window.visualViewport?.removeEventListener("resize", scheduleMeasure);
+    };
+  }, []);
+
+  // Ridimensiona insieme immagine e coordinate delle card,
+  // mantenendo sempre le stesse proporzioni.
+  useEffect(() => {
+    if (view !== "3d") return;
+
+    const space = mapSpaceRef.current;
+    if (!space) return;
+
+    const measure = () => {
+      const availableWidth = space.clientWidth;
+      const availableHeight = space.clientHeight;
+
+      const width = Math.max(
+        0,
+        Math.min(availableWidth, availableHeight * MAP_RATIO),
+      );
+      const height = width / MAP_RATIO;
+
+      setMapSize((current) => {
+        if (
+          Math.abs(current.width - width) < 0.5 &&
+          Math.abs(current.height - height) < 0.5
+        ) {
+          return current;
+        }
+
+        return { width, height };
+      });
+    };
+
+    const observer = new ResizeObserver(measure);
+    observer.observe(space);
+    measure();
+
+    return () => observer.disconnect();
+  }, [view]);
 
   const activeMap =
     romeHour < 12
@@ -87,203 +232,282 @@ function HomePage() {
         : { src: mapImage, alt: "Vista aerea serale del circolo" };
 
   const sessionByCourt = useMemo(() => {
-    const m = new Map<string, Session>();
-    db.sessions.filter((s) => !s.closed).forEach((s) => m.set(s.courtId, s));
-    return m;
+    const sessions = new Map<string, Session>();
+
+    db.sessions
+      .filter((session) => !session.closed)
+      .forEach((session) => sessions.set(session.courtId, session));
+
+    return sessions;
   }, [db.sessions]);
 
   const occupied = db.courts.filter((c) => sessionByCourt.has(c.id)).length;
   const free = db.courts.length - occupied;
   const today = new Date().toDateString();
-  const todayTotal = db.transactions
-    .filter((t) => !t.cancelled && new Date(t.ts).toDateString() === today)
-    .reduce((s, t) => s + t.amount, 0);
-  const todayCount = db.transactions.filter(
+
+  const todayTransactions = db.transactions.filter(
     (t) => !t.cancelled && new Date(t.ts).toDateString() === today,
-  ).length;
+  );
+
+  const todayTotal = todayTransactions.reduce((sum, t) => sum + t.amount, 0);
+  const todayCount = todayTransactions.length;
   const lowStock = db.products.filter((p) => p.stock <= p.minStock).length;
 
   const court = db.courts.find((c) => c.id === selected) ?? null;
   const session = court ? (sessionByCourt.get(court.id) ?? null) : null;
 
+  const compactMap = mapSize.width < 760;
+  const tinyMap = mapSize.width < 440;
+
+  const cardFontSize = Math.max(
+    8,
+    Math.min(11, mapSize.width / 105),
+  );
+
   return (
-    <div className="space-y-5">
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-start">
-        <div className="min-w-0">
-          <div className="flex flex-wrap items-center gap-3">
-            <h1 className="text-2xl font-bold uppercase sm:text-3xl">
-              Club Management
-            </h1>
-            <Badge tone="primary">
-              {occupied}/{db.courts.length} OCCUPATI
-            </Badge>
-            <Badge tone="success">
-              {free}/{db.courts.length} LIBERI
-            </Badge>
+    <>
+      <div
+        ref={pageRef}
+        className="grid min-w-0 gap-3"
+        style={{
+          height: pageHeight ?? "calc(100dvh - 140px)",
+          gridTemplateRows: "auto minmax(0, 1fr) auto",
+        }}
+      >
+        <div
+          ref={headerRef}
+          className="flex min-w-0 flex-wrap items-start justify-between gap-3"
+        >
+          <div className="min-w-0">
+            <div className="flex flex-wrap items-center gap-2 sm:gap-3">
+              <h1 className="text-xl font-bold uppercase sm:text-2xl xl:text-3xl">
+                Club Management
+              </h1>
+              <Badge tone="primary">
+                {occupied}/{db.courts.length} OCCUPATI
+              </Badge>
+              <Badge tone="success">
+                {free}/{db.courts.length} LIBERI
+              </Badge>
+            </div>
+            <p className="mt-1 text-xs text-muted-foreground sm:text-sm">
+              Controllo operativo del circolo — {db.courts.length} campi attivi
+            </p>
           </div>
-          <p className="mt-1 text-sm text-muted-foreground">
-            Controllo operativo del circolo — {db.courts.length} campi attivi
-          </p>
+
+          <div className="flex flex-wrap items-center gap-2">
+            <SegTabs
+              value={view}
+              onChange={setView}
+              options={[
+                { value: "3d", label: "3D" },
+                { value: "2d", label: "2D" },
+              ]}
+            />
+            <Btn variant="outline" size="sm" onClick={() => setNewOpen(true)}>
+              <Plus className="size-4" /> Nuova sessione
+            </Btn>
+            <Btn
+              variant="outline"
+              size="sm"
+              onClick={() => toast.success("Mappa aggiornata")}
+            >
+              <RefreshCw className="size-4" />
+            </Btn>
+          </div>
         </div>
-        <div className="flex flex-wrap items-center gap-2">
-          <SegTabs
-            value={view}
-            onChange={setView}
-            options={[
-              { value: "3d", label: "3D" },
-              { value: "2d", label: "2D" },
-            ]}
-          />
-          <Btn variant="outline" size="sm" onClick={() => setNewOpen(true)}>
-            <Plus className="size-4" /> Nuova sessione
-          </Btn>
-          <Btn
-            variant="outline"
-            size="sm"
-            onClick={() => toast.success("Mappa aggiornata")}
+
+        {view === "3d" ? (
+          <div
+            ref={mapSpaceRef}
+            className="flex min-h-0 min-w-0 items-center justify-center overflow-hidden"
           >
-            <RefreshCw className="size-4" />
-          </Btn>
-        </div>
-      </div>
+            <div
+              className="relative shrink-0 overflow-hidden rounded-xl border border-border bg-black"
+              style={{
+                width: mapSize.width,
+                height: mapSize.height,
+                visibility: mapSize.width > 0 ? "visible" : "hidden",
+              }}
+            >
+              <img
+                src={activeMap.src}
+                alt={activeMap.alt}
+                draggable={false}
+                className="absolute inset-0 block h-full w-full select-none object-cover object-center"
+              />
 
-      {view === "3d" ? (
-        <Panel className="relative overflow-hidden p-0">
-          <img
-            src={activeMap.src}
-            alt={activeMap.alt}
-            width={1536}
-            height={1024}
-            className="aspect-[3/2] min-h-[260px] w-full object-cover lg:h-[560px] lg:aspect-auto"
-          />
-          <div className="absolute inset-0">
-            {db.courts.map((c) => {
-              const s = sessionByCourt.get(c.id);
-              const position = getCourtMapPosition(c);
+              <div className="absolute inset-0">
+                {db.courts.map((c) => {
+                  const activeSession = sessionByCourt.get(c.id);
+                  const position = getCourtPosition(c);
+                  const status = activeSession ? "OCCUPATO" : "LIBERO";
 
-              return (
-                <button
-                  key={c.id}
-                  onClick={() => setSelected(c.id)}
-                  style={{
-                    left: `${position.x}%`,
-                    top: `${position.y}%`,
-                  }}
-                  className={cn(
-                    "absolute flex -translate-x-1/2 -translate-y-1/2 items-center gap-1 rounded-lg border px-1.5 py-1 backdrop-blur transition-transform hover:scale-105 sm:gap-2 sm:px-3 sm:py-1.5",
-                    s
-                      ? "border-primary/60 bg-black/80"
-                      : "border-border-strong bg-black/70",
-                  )}
-                >
-                  <span
+                  return (
+                    <button
+                      key={c.id}
+                      type="button"
+                      title={`${c.name} — ${status}`}
+                      aria-label={`${c.name}, ${status}. Apri dettagli campo`}
+                      onClick={() => setSelected(c.id)}
+                      style={{
+                        left: `${position.x}%`,
+                        top: `${position.y}%`,
+                        fontSize: cardFontSize,
+                        padding: tinyMap
+                          ? "4px 5px"
+                          : compactMap
+                            ? "5px 7px"
+                            : "7px 10px",
+                        gap: compactMap ? 4 : 7,
+                        maxWidth: "24%",
+                      }}
+                      className={cn(
+                        "absolute z-10 flex -translate-x-1/2 -translate-y-1/2 items-center whitespace-nowrap rounded-lg border bg-black/85 leading-tight shadow-lg backdrop-blur-sm transition-colors hover:z-20 hover:bg-black focus-visible:z-20 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary",
+                        activeSession
+                          ? "border-primary/70"
+                          : "border-border-strong",
+                      )}
+                    >
+                      <span
+                        className={cn(
+                          "shrink-0 rounded-full",
+                          activeSession ? "bg-primary" : "bg-success",
+                        )}
+                        style={{
+                          width: compactMap ? 6 : 8,
+                          height: compactMap ? 6 : 8,
+                        }}
+                      />
+
+                      <span className="min-w-0 truncate font-bold uppercase">
+                        {c.name}
+                      </span>
+
+                      {!compactMap && (
+                        <span
+                          className={cn(
+                            "mono",
+                            activeSession ? "text-primary" : "text-success",
+                          )}
+                          style={{ fontSize: cardFontSize - 1 }}
+                        >
+                          {status}
+                        </span>
+                      )}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          </div>
+        ) : (
+          <div className="min-h-0 overflow-y-auto pr-1">
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4">
+              {db.courts.map((c) => {
+                const s = sessionByCourt.get(c.id);
+
+                return (
+                  <button
+                    key={c.id}
+                    onClick={() => setSelected(c.id)}
                     className={cn(
-                      "size-2 rounded-full",
-                      s ? "bg-primary" : "bg-success",
-                    )}
-                  />
-                  <span className="text-[9px] font-bold uppercase sm:text-[11px]">
-                    {c.name}
-                  </span>
-                  <span
-                    className={cn(
-                      "mono hidden text-[10px] sm:inline",
-                      s ? "text-primary" : "text-success",
+                      "rounded-xl border p-4 text-left transition-colors",
+                      s
+                        ? "border-primary/50 bg-primary/5 hover:bg-primary/10"
+                        : "border-border bg-surface-low hover:bg-surface-high",
                     )}
                   >
-                    {s ? "OCCUPATO" : "LIBERO"}
-                  </span>
-                </button>
-              );
-            })}
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <span className="font-display text-xl font-bold">
+                        {c.name}
+                      </span>
+                      <Badge tone={s ? "primary" : "success"} dot>
+                        {s ? "OCCUPATO" : "LIBERO"}
+                      </Badge>
+                    </div>
+                    <div className="label-caps mt-1 text-muted-foreground">
+                      {c.type}
+                    </div>
+                    <div className="mono mt-4 text-sm">
+                      {s ? (
+                        <>
+                          dalle {fmtTime(s.startedAt)} · {s.players.length} giocatori
+                          <div className="mt-1 text-primary">
+                            {eur(
+                              s.players
+                                .filter((p) => p.paid)
+                                .reduce((sum, p) => sum + p.quota, 0),
+                            )}{" "}
+                            / {eur(s.total)}
+                          </div>
+                        </>
+                      ) : (
+                        <span className="text-muted-foreground">
+                          {eur(c.hourlyPrice)} / ora
+                        </span>
+                      )}
+                    </div>
+                  </button>
+                );
+              })}
+            </div>
           </div>
-        </Panel>
-      ) : (
-        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
-          {db.courts.map((c) => {
-            const s = sessionByCourt.get(c.id);
-            return (
-              <button
-                key={c.id}
-                onClick={() => setSelected(c.id)}
-                className={cn(
-                  "rounded-xl border p-4 text-left transition-colors",
-                  s
-                    ? "border-primary/50 bg-primary/5 hover:bg-primary/10"
-                    : "border-border bg-surface-low hover:bg-surface-high",
-                )}
-              >
-                <div className="flex items-center justify-between">
-                  <span className="font-display text-xl font-bold">{c.name}</span>
-                  <Badge tone={s ? "primary" : "success"} dot>
-                    {s ? "OCCUPATO" : "LIBERO"}
-                  </Badge>
-                </div>
-                <div className="label-caps mt-1 text-muted-foreground">
-                  {c.type}
-                </div>
-                <div className="mono mt-4 text-sm">
-                  {s ? (
-                    <>
-                      dalle {fmtTime(s.startedAt)} · {s.players.length} giocatori
-                      <div className="mt-1 text-primary">
-                        {eur(
-                          s.players
-                            .filter((p) => p.paid)
-                            .reduce((a, p) => a + p.quota, 0),
-                        )}{" "}
-                        / {eur(s.total)}
-                      </div>
-                    </>
-                  ) : (
-                    <span className="text-muted-foreground">
-                      {eur(c.hourlyPrice)} / ora
-                    </span>
-                  )}
-                </div>
-              </button>
-            );
-          })}
-        </div>
-      )}
-
-      <Panel className="grid grid-cols-2 items-center gap-3 p-3 sm:flex sm:flex-wrap sm:gap-4 sm:p-4">
-        <Link to="/pos">
-          <Btn variant="primary">
-            <Plus className="size-4" /> Apri POS Bar
-          </Btn>
-        </Link>
-        <Btn variant="outline" onClick={() => setNewOpen(true)}>
-          <Users2 className="size-4" /> Apri sessione campo
-        </Btn>
-        {lowStock > 0 && (
-          <Link
-            to="/magazzino"
-            className="col-span-2 flex min-w-0 items-center gap-2 sm:gap-3"
-          >
-            <Badge tone="warning">
-              <AlertTriangle className="size-3" /> {lowStock} prodotti sottoscorta
-            </Badge>
-            <span className="text-sm text-muted-foreground underline">
-              Visualizza magazzino →
-            </span>
-          </Link>
         )}
-        <div className="mono col-span-2 text-sm sm:ml-auto">
-          <span className="label-caps text-muted-foreground">Incasso oggi: </span>
-          <span className="text-lg font-bold">{eur(todayTotal)}</span>
-          <span className="ml-2 text-muted-foreground">({todayCount} tx)</span>
+
+        <div ref={footerRef} className="min-w-0">
+          <Panel className="flex min-w-0 flex-wrap items-center gap-2 p-2 sm:gap-3 sm:p-3">
+            <Link to="/pos" className="max-sm:flex-1">
+              <Btn
+                variant="primary"
+                size="sm"
+                className="max-sm:w-full"
+              >
+                <Plus className="size-4" /> Apri POS Bar
+              </Btn>
+            </Link>
+
+            <Btn
+              variant="outline"
+              size="sm"
+              className="max-sm:flex-1"
+              onClick={() => setNewOpen(true)}
+            >
+              <Users2 className="size-4" /> Apri sessione campo
+            </Btn>
+
+            {lowStock > 0 && (
+              <Link
+                to="/magazzino"
+                className="flex min-w-0 flex-wrap items-center gap-2"
+              >
+                <Badge tone="warning">
+                  <AlertTriangle className="size-3" /> {lowStock} prodotti
+                  sottoscorta
+                </Badge>
+                <span className="hidden text-xs text-muted-foreground underline xl:inline">
+                  Visualizza magazzino →
+                </span>
+              </Link>
+            )}
+
+            <div className="mono ml-auto text-xs sm:text-sm">
+              <span className="text-muted-foreground">Incasso oggi: </span>
+              <span className="font-bold sm:text-lg">{eur(todayTotal)}</span>
+              <span className="ml-2 text-muted-foreground">
+                ({todayCount} tx)
+              </span>
+            </div>
+          </Panel>
         </div>
-      </Panel>
+      </div>
 
       <SessionDrawer
         court={court}
         session={session}
         onClose={() => setSelected(null)}
         canManage={!!user}
-        onStart={() => {
-          setNewOpen(true);
-        }}
+        onStart={() => setNewOpen(true)}
       />
 
       <NewSessionModal
@@ -291,7 +515,7 @@ function HomePage() {
         onClose={() => setNewOpen(false)}
         preselect={court && !session ? court.id : undefined}
       />
-    </div>
+    </>
   );
 }
 
@@ -342,12 +566,12 @@ function SessionDrawer({
   const playerTotal = (pid: string) => {
     const p = session?.players.find((x) => x.id === pid);
     if (!p) return 0;
-    return p.quota + p.extras.reduce((s, e) => s + e.price * e.qty, 0);
+    return p.quota + p.extras.reduce((sum, e) => sum + e.price * e.qty, 0);
   };
 
-  const payTotal = payIds.reduce((s, id) => s + playerTotal(id), 0);
+  const payTotal = payIds.reduce((sum, id) => sum + playerTotal(id), 0);
   const collected = session
-    ? session.players.filter((p) => p.paid).reduce((s, p) => s + p.quota, 0)
+    ? session.players.filter((p) => p.paid).reduce((sum, p) => sum + p.quota, 0)
     : 0;
 
   return (
@@ -373,7 +597,7 @@ function SessionDrawer({
                   {eur(
                     session.players
                       .filter((p) => !p.paid)
-                      .reduce((s, p) => s + playerTotal(p.id), 0),
+                      .reduce((sum, p) => sum + playerTotal(p.id), 0),
                   )}
                 </span>
               </div>
@@ -446,7 +670,9 @@ function SessionDrawer({
         {!session ? (
           <div className="space-y-4">
             <Panel className="p-4">
-              <div className="label-caps text-muted-foreground">Tariffa campo</div>
+              <div className="label-caps text-muted-foreground">
+                Tariffa campo
+              </div>
               <div className="mono mt-1 text-2xl font-bold">
                 {eur(court.hourlyPrice)}
               </div>
@@ -478,7 +704,10 @@ function SessionDrawer({
                 <div
                   className="h-full rounded-full bg-primary"
                   style={{
-                    width: `${Math.min(100, (collected / Math.max(1, session.total)) * 100)}%`,
+                    width: `${Math.min(
+                      100,
+                      (collected / Math.max(1, session.total)) * 100,
+                    )}%`,
                   }}
                 />
               </div>
@@ -509,7 +738,7 @@ function SessionDrawer({
                         session.players.map((p) => [p.id, String(p.quota)]),
                       ),
                     );
-                    setEditQuotas((v) => !v);
+                    setEditQuotas((value) => !value);
                   }}
                 >
                   {editQuotas ? "Chiudi" : "Modifica quote"}
@@ -550,7 +779,10 @@ function SessionDrawer({
                           <div className="mono text-[11px] text-muted-foreground">
                             Quota: {eur(p.quota)} · Extra:{" "}
                             {eur(
-                              p.extras.reduce((s, e) => s + e.price * e.qty, 0),
+                              p.extras.reduce(
+                                (sum, e) => sum + e.price * e.qty,
+                                0,
+                              ),
                             )}
                           </div>
                         </div>
@@ -570,8 +802,8 @@ function SessionDrawer({
                             step="0.5"
                             value={quotaDraft[p.id] ?? String(p.quota)}
                             onChange={(e) =>
-                              setQuotaDraft((q) => ({
-                                ...q,
+                              setQuotaDraft((draft) => ({
+                                ...draft,
                                 [p.id]: e.target.value,
                               }))
                             }
@@ -585,25 +817,25 @@ function SessionDrawer({
 
                       {p.extras.length > 0 && (
                         <div className="mt-3 space-y-1 rounded-lg border border-border bg-surface px-3 py-2">
-                          {p.extras.map((e) => (
+                          {p.extras.map((extra) => (
                             <div
-                              key={e.productId}
+                              key={extra.productId}
                               className="mono flex items-center justify-between text-[11px]"
                             >
                               <span>
-                                {e.qty}× {e.name}
+                                {extra.qty}× {extra.name}
                               </span>
                               <span className="flex items-center gap-2">
-                                {eur(e.price * e.qty)}
+                                {eur(extra.price * extra.qty)}
                                 {!p.paid && (
                                   <button
                                     className="text-danger"
-                                    onClick={(ev) => {
-                                      ev.stopPropagation();
+                                    onClick={(event) => {
+                                      event.stopPropagation();
                                       courtSessions.removeExtra(
                                         session.id,
                                         p.id,
-                                        e.productId,
+                                        extra.productId,
                                       );
                                     }}
                                   >
@@ -625,8 +857,8 @@ function SessionDrawer({
                           <Btn
                             size="sm"
                             variant="outline"
-                            onClick={(ev) => {
-                              ev.stopPropagation();
+                            onClick={(event) => {
+                              event.stopPropagation();
                               setPayIds([p.id]);
                               setMethod("carta");
                               setPayOpen(true);
@@ -650,9 +882,9 @@ function SessionDrawer({
                     courtSessions.updateQuotas(
                       session.id,
                       Object.fromEntries(
-                        Object.entries(quotaDraft).map(([k, v]) => [
-                          k,
-                          Number(v) || 0,
+                        Object.entries(quotaDraft).map(([key, value]) => [
+                          key,
+                          Number(value) || 0,
                         ]),
                       ),
                     );
@@ -720,14 +952,17 @@ function SessionDrawer({
               variant="primary"
               onClick={() => {
                 if (!session) return;
-                const c = method === "misto" ? Number(cash) || 0 : 0;
+
+                const cashAmount = method === "misto" ? Number(cash) || 0 : 0;
+
                 courtSessions.payPlayers(
                   session.id,
                   payIds,
                   method,
-                  c,
-                  Math.max(0, payTotal - c),
+                  cashAmount,
+                  Math.max(0, payTotal - cashAmount),
                 );
+
                 setPayOpen(false);
                 toast.success(`Incassati ${eur(payTotal)}`);
               }}
@@ -787,6 +1022,7 @@ function NewSessionModal({
     db.sessions.filter((s) => !s.closed).map((s) => s.courtId),
   );
   const freeCourts = db.courts.filter((c) => !busy.has(c.id));
+
   const [courtId, setCourtId] = useState(preselect ?? freeCourts[0]?.id ?? "");
   const [mode, setMode] = useState<"campo" | "giocatore">(
     db.settings.defaultPricingMode,
@@ -815,6 +1051,7 @@ function NewSessionModal({
             disabled={!courtId}
             onClick={() => {
               const n = Number(count) || 4;
+
               courtSessions.start({
                 courtId,
                 pricingMode: mode,
@@ -822,6 +1059,7 @@ function NewSessionModal({
                 durationMin: Number(duration) || 90,
                 playerNames: names.slice(0, n),
               });
+
               toast.success("Sessione avviata");
               onClose();
             }}
@@ -844,6 +1082,7 @@ function NewSessionModal({
             ))}
           </Select>
         </Field>
+
         <div className="grid grid-cols-2 gap-3">
           <Field label="Durata (min)">
             <Select
@@ -860,10 +1099,13 @@ function NewSessionModal({
               value={count}
               onChange={(e) => {
                 setCount(e.target.value);
-                setNames((prev) => {
+
+                setNames((previous) => {
                   const n = Number(e.target.value);
-                  const next = [...prev];
+                  const next = [...previous];
+
                   while (next.length < n) next.push("");
+
                   return next.slice(0, n);
                 });
               }}
@@ -874,6 +1116,7 @@ function NewSessionModal({
             </Select>
           </Field>
         </div>
+
         <Field label="Modalità prezzo">
           <SegTabs
             value={mode}
@@ -885,23 +1128,25 @@ function NewSessionModal({
             ]}
           />
         </Field>
+
         <div className="space-y-2">
           <span className="label-caps text-muted-foreground">Giocatori</span>
-          {Array.from({ length: Number(count) || 4 }).map((_, i) => (
+          {Array.from({ length: Number(count) || 4 }).map((_, index) => (
             <Input
-              key={i}
-              placeholder={`Giocatore ${i + 1}`}
-              value={names[i] ?? ""}
+              key={index}
+              placeholder={`Giocatore ${index + 1}`}
+              value={names[index] ?? ""}
               onChange={(e) =>
-                setNames((prev) => {
-                  const next = [...prev];
-                  next[i] = e.target.value;
+                setNames((previous) => {
+                  const next = [...previous];
+                  next[index] = e.target.value;
                   return next;
                 })
               }
             />
           ))}
         </div>
+
         <div className="mono flex items-center justify-between rounded-lg border border-border bg-surface-container p-3">
           <span className="text-sm text-muted-foreground">
             Totale sessione (
