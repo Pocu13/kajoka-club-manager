@@ -1,5 +1,5 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
 import {
   AlertTriangle,
@@ -27,6 +27,8 @@ import { eur, fmtTime } from "@/lib/format";
 import type { Court, Session } from "@/lib/types";
 import { cn } from "@/lib/utils";
 import mapImage from "@/assets/club-map.jpg";
+import mapDayAsset from "@/assets/mappa_diurna.png.asset.json";
+import mapAfternoonAsset from "@/assets/mappa_pomeriggio.png.asset.json";
 
 export const Route = createFileRoute("/home")({
   ssr: false,
@@ -58,6 +60,19 @@ function HomePage() {
   const [view, setView] = useState<"3d" | "2d">("3d");
   const [selected, setSelected] = useState<string | null>(null);
   const [newOpen, setNewOpen] = useState(false);
+  const [romeHour, setRomeHour] = useState(() => getRomeHour());
+
+  useEffect(() => {
+    const timer = window.setInterval(() => setRomeHour(getRomeHour()), 60_000);
+    return () => window.clearInterval(timer);
+  }, []);
+
+  const activeMap =
+    romeHour < 13
+      ? { src: mapDayAsset.url, alt: "Vista aerea diurna del circolo" }
+      : romeHour < 19
+        ? { src: mapAfternoonAsset.url, alt: "Vista aerea pomeridiana del circolo" }
+        : { src: mapImage, alt: "Vista aerea serale del circolo" };
 
   const sessionByCourt = useMemo(() => {
     const m = new Map<string, Session>();
@@ -81,10 +96,10 @@ function HomePage() {
 
   return (
     <div className="space-y-5">
-      <div className="flex flex-wrap items-start justify-between gap-4">
-        <div>
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-start">
+        <div className="min-w-0">
           <div className="flex flex-wrap items-center gap-3">
-            <h1 className="text-3xl font-bold tracking-tight uppercase">
+            <h1 className="text-2xl font-bold uppercase sm:text-3xl">
               Club Management
             </h1>
             <Badge tone="primary">
@@ -98,7 +113,7 @@ function HomePage() {
             Controllo operativo del circolo — {db.courts.length} campi attivi
           </p>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
           <SegTabs
             value={view}
             onChange={setView}
@@ -123,11 +138,11 @@ function HomePage() {
       {view === "3d" ? (
         <Panel className="relative overflow-hidden p-0">
           <img
-            src={mapImage}
-            alt="Vista aerea notturna del circolo con campi padel, tennis e beach volley"
+            src={activeMap.src}
+            alt={activeMap.alt}
             width={1536}
             height={1024}
-            className="h-[560px] w-full object-cover"
+            className="aspect-[3/2] min-h-[260px] w-full object-cover lg:h-[560px] lg:aspect-auto"
           />
           <div className="absolute inset-0">
             {db.courts.map((c) => {
@@ -138,7 +153,7 @@ function HomePage() {
                   onClick={() => setSelected(c.id)}
                   style={{ left: `${c.x}%`, top: `${c.y}%` }}
                   className={cn(
-                    "absolute flex -translate-x-1/2 -translate-y-1/2 items-center gap-2 rounded-lg border px-3 py-1.5 backdrop-blur transition-transform hover:scale-105",
+                    "absolute flex -translate-x-1/2 -translate-y-1/2 items-center gap-1 rounded-lg border px-1.5 py-1 backdrop-blur transition-transform hover:scale-105 sm:gap-2 sm:px-3 sm:py-1.5",
                     s
                       ? "border-primary/60 bg-black/80"
                       : "border-border-strong bg-black/70",
@@ -150,10 +165,10 @@ function HomePage() {
                       s ? "bg-primary" : "bg-success",
                     )}
                   />
-                  <span className="label-caps">{c.name}</span>
+                  <span className="text-[9px] font-bold uppercase sm:text-[11px]">{c.name}</span>
                   <span
                     className={cn(
-                      "mono text-[10px]",
+                      "mono hidden text-[10px] sm:inline",
                       s ? "text-primary" : "text-success",
                     )}
                   >
@@ -163,7 +178,7 @@ function HomePage() {
               );
             })}
           </div>
-          <div className="absolute bottom-4 left-4 flex items-center gap-4 rounded-lg border border-border-strong bg-black/75 px-4 py-2 backdrop-blur">
+          <div className="absolute bottom-2 left-2 flex items-center gap-2 rounded-lg border border-border-strong bg-surface/90 px-2 py-1.5 backdrop-blur sm:bottom-4 sm:left-4 sm:gap-4 sm:px-4 sm:py-2">
             <span className="mono flex items-center gap-2 text-xs text-success">
               <span className="size-2 rounded-full bg-success" /> LIBERO ({free})
             </span>
@@ -216,7 +231,7 @@ function HomePage() {
         </div>
       )}
 
-      <Panel className="flex flex-wrap items-center gap-4 p-4">
+      <Panel className="grid grid-cols-2 items-center gap-3 p-3 sm:flex sm:flex-wrap sm:gap-4 sm:p-4">
         <Link to="/pos">
           <Btn variant="primary">
             <Plus className="size-4" /> Apri POS Bar
@@ -226,7 +241,7 @@ function HomePage() {
           <Users2 className="size-4" /> Apri sessione campo
         </Btn>
         {lowStock > 0 && (
-          <Link to="/magazzino" className="flex items-center gap-3">
+          <Link to="/magazzino" className="col-span-2 flex min-w-0 items-center gap-2 sm:gap-3">
             <Badge tone="warning">
               <AlertTriangle className="size-3" /> {lowStock} prodotti sottoscorta
             </Badge>
@@ -235,7 +250,7 @@ function HomePage() {
             </span>
           </Link>
         )}
-        <div className="mono ml-auto text-sm">
+        <div className="mono col-span-2 text-sm sm:ml-auto">
           <span className="label-caps text-muted-foreground">Incasso oggi: </span>
           <span className="text-lg font-bold">{eur(todayTotal)}</span>
           <span className="ml-2 text-muted-foreground">({todayCount} tx)</span>
@@ -259,6 +274,15 @@ function HomePage() {
       />
     </div>
   );
+}
+
+function getRomeHour() {
+  const hour = new Intl.DateTimeFormat("it-IT", {
+    timeZone: "Europe/Rome",
+    hour: "2-digit",
+    hourCycle: "h23",
+  }).formatToParts(new Date()).find((part) => part.type === "hour")?.value;
+  return Number(hour ?? new Date().getHours());
 }
 
 function SessionDrawer({

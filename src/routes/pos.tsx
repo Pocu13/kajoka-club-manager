@@ -56,6 +56,7 @@ function PosPage() {
   const [payOpen, setPayOpen] = useState(false);
   const [method, setMethod] = useState<PaymentMethod>(db.settings.posDefaultMethod);
   const [cash, setCash] = useState("0");
+  const [mobileCartOpen, setMobileCartOpen] = useState(false);
 
   const categories = useMemo(
     () => ["Tutti", "Preferiti", ...Array.from(new Set(db.products.map((p) => p.category)))],
@@ -138,16 +139,16 @@ function PosPage() {
   }
 
   return (
-    <div className="grid grid-cols-1 gap-5 xl:grid-cols-[1fr_380px]">
-      <div className="space-y-4">
-        <div className="flex flex-wrap items-center justify-between gap-3">
-          <div>
-            <h1 className="text-3xl font-bold tracking-tight uppercase">Cassa Bar</h1>
+    <div className="grid grid-cols-1 gap-5 pb-20 xl:grid-cols-[1fr_380px] xl:pb-0">
+      <div className="min-w-0 space-y-4">
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-center">
+          <div className="min-w-0">
+            <h1 className="text-2xl font-bold uppercase sm:text-3xl">Cassa Bar</h1>
             <p className="mt-1 text-sm text-muted-foreground">
               {visible.length} prodotti a listino · scarico magazzino automatico
             </p>
           </div>
-          <div className="relative w-72">
+          <div className="relative w-full sm:w-72">
             <Search className="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-muted-foreground" />
             <Input
               placeholder="Cerca prodotto o SKU…"
@@ -158,13 +159,13 @@ function PosPage() {
           </div>
         </div>
 
-        <div className="flex flex-wrap gap-2">
+        <div className="flex gap-2 overflow-x-auto pb-1">
           {categories.map((c) => (
             <button
               key={c}
               onClick={() => setCat(c)}
               className={cn(
-                "label-caps rounded-full border px-3 py-1.5 transition-colors",
+                "label-caps shrink-0 rounded-full border px-3 py-1.5 transition-colors",
                 cat === c
                   ? "border-primary bg-primary text-white"
                   : "border-border bg-surface-container text-muted-foreground hover:bg-surface-high",
@@ -180,7 +181,7 @@ function PosPage() {
             <EmptyState label="Nessun prodotto corrisponde alla ricerca." />
           </Panel>
         ) : (
-          <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 2xl:grid-cols-4">
+          <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 sm:gap-3 2xl:grid-cols-4">
             {visible.map((p) => {
               const st = stockState(p);
               return (
@@ -188,7 +189,7 @@ function PosPage() {
                   key={p.id}
                   onClick={() => add(p.id)}
                   disabled={st === "esaurito" && !db.settings.negativeStock}
-                  className="group relative rounded-xl border border-border bg-surface-low p-3 text-left transition-colors hover:border-primary/60 hover:bg-surface-high disabled:opacity-40"
+                  className="group relative min-w-0 rounded-xl border border-border bg-surface-low p-3 text-left transition-colors hover:border-primary/60 hover:bg-surface-high disabled:opacity-40"
                 >
                   {p.favorite && (
                     <Star className="absolute top-3 right-3 size-3.5 fill-primary text-primary" />
@@ -198,7 +199,7 @@ function PosPage() {
                   <div className="label-caps mt-0.5 text-muted-foreground">
                     {p.category}
                   </div>
-                  <div className="mt-2 flex items-end justify-between">
+                   <div className="mt-2 flex flex-wrap items-end justify-between gap-1">
                     <span className="mono text-base font-bold text-primary">
                       {eur(p.price)}
                     </span>
@@ -217,9 +218,16 @@ function PosPage() {
         )}
       </div>
 
-      <Panel className="flex h-fit flex-col gap-4 p-4 xl:sticky xl:top-4">
-        <div className="flex items-center justify-between">
-          <span className="label-caps text-muted-foreground">Scontrino</span>
+      <Panel className="fixed inset-x-3 bottom-20 z-30 flex max-h-[65vh] flex-col gap-3 overflow-auto p-3 shadow-2xl sm:inset-x-5 xl:sticky xl:inset-auto xl:top-4 xl:z-auto xl:h-fit xl:max-h-none xl:gap-4 xl:overflow-visible xl:p-4 xl:shadow-none">
+        <button
+          type="button"
+          onClick={() => setMobileCartOpen((value) => !value)}
+          className="flex w-full items-center justify-between text-left xl:pointer-events-none"
+        >
+          <span className="label-caps text-muted-foreground">Scontrino · {cart.reduce((sum, line) => sum + line.qty, 0)} articoli</span>
+          <span className="mono font-bold text-primary xl:hidden">{eur(total)} {mobileCartOpen ? "−" : "+"}</span>
+        </button>
+        <div className={cn("contents", !mobileCartOpen && "max-xl:hidden")}>
           {cart.length > 0 && (
             <button
               className="flex items-center gap-1 text-xs text-danger"
@@ -228,7 +236,7 @@ function PosPage() {
               <Trash2 className="size-3" /> Svuota
             </button>
           )}
-        </div>
+          )}
 
         {cart.length === 0 ? (
           <EmptyState label="Carrello vuoto — tocca un prodotto." />
@@ -296,6 +304,7 @@ function PosPage() {
         >
           Incassa {eur(total)}
         </Btn>
+        </div>
       </Panel>
 
       <Modal
