@@ -136,7 +136,8 @@ function ProductsPage() {
         {rows.length === 0 ? (
           <EmptyState label="Nessun prodotto trovato." />
         ) : (
-          <div className="hidden overflow-x-auto md:block">
+          <>
+            <div className="hidden overflow-x-auto md:block">
             <table className="w-full text-sm">
               <thead>
                 <tr className="border-b border-border bg-surface-container">
@@ -241,8 +242,8 @@ function ProductsPage() {
                 })}
               </tbody>
             </table>
-          </div>
-          <div className="divide-y divide-border md:hidden">
+            </div>
+            <div className="divide-y divide-border md:hidden">
             {rows.map((p) => {
               const st = stockState(p);
               const margin = p.price > 0 ? ((p.price - p.cost) / p.price) * 100 : 0;
@@ -278,7 +279,8 @@ function ProductsPage() {
                 </article>
               );
             })}
-          </div>
+            </div>
+          </>
         )}
       </Panel>
 

@@ -68,9 +68,9 @@ function HomePage() {
   }, []);
 
   const activeMap =
-    romeHour < 13
+    romeHour < 12
       ? { src: mapDayAsset.url, alt: "Vista aerea diurna del circolo" }
-      : romeHour < 19
+      : romeHour < 18
         ? { src: mapAfternoonAsset.url, alt: "Vista aerea pomeridiana del circolo" }
         : { src: mapImage, alt: "Vista aerea serale del circolo" };
 

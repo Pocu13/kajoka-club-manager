@@ -236,9 +236,8 @@ function PosPage() {
               <Trash2 className="size-3" /> Svuota
             </button>
           )}
-          )}
 
-        {cart.length === 0 ? (
+          {cart.length === 0 ? (
           <EmptyState label="Carrello vuoto — tocca un prodotto." />
         ) : (
           <div className="max-h-[42vh] space-y-2 overflow-auto pr-1">
@@ -275,9 +274,9 @@ function PosPage() {
               </div>
             ))}
           </div>
-        )}
+          )}
 
-        <div className="mono space-y-1 border-t border-border pt-3 text-sm">
+          <div className="mono space-y-1 border-t border-border pt-3 text-sm">
           <div className="flex justify-between text-muted-foreground">
             <span>Subtotale</span>
             <span>{eur(subtotal)}</span>
@@ -294,16 +293,16 @@ function PosPage() {
             <span className="label-caps text-muted-foreground">Totale</span>
             <span>{eur(total)}</span>
           </div>
-        </div>
+          </div>
 
-        <Btn
+          <Btn
           variant="primary"
           size="lg"
           disabled={cart.length === 0}
           onClick={() => setPayOpen(true)}
         >
           Incassa {eur(total)}
-        </Btn>
+          </Btn>
         </div>
       </Panel>
 
