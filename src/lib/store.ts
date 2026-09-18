@@ -1,6 +1,8 @@
 import { useSyncExternalStore } from "react";
-import { buildSeed, DEFAULT_SETTINGS } from "./seed";
+import { buildBookings, buildSeed, DEFAULT_SETTINGS } from "./seed";
+import { overlaps, toMin } from "./bookings";
 import type {
+  Booking,
   DB,
   Movement,
   MovementType,
@@ -25,6 +27,7 @@ const emptyDB = (): DB => ({
   products: [],
   courts: [],
   sessions: [],
+  bookings: [],
   movements: [],
   transactions: [],
   settings: DEFAULT_SETTINGS,
