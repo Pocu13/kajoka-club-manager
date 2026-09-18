@@ -129,6 +129,27 @@ export interface Session {
   closed: boolean;
 }
 
+export type BookingKind = "partita" | "lezione" | "serie" | "manutenzione";
+
+export interface Booking {
+  id: string;
+  courtId: string;
+  /** Data locale in formato AAAA-MM-GG */
+  date: string;
+  /** Orario locale HH:MM */
+  start: string;
+  end: string;
+  kind: BookingKind;
+  title: string;
+  players: string[];
+  extras: string[];
+  price: number;
+  note: string;
+  createdAt: string;
+  createdBy: string;
+  cancelled: boolean;
+}
+
 export interface Settings {
   clubName: string;
   language: string;
@@ -160,6 +181,7 @@ export interface DB {
   products: Product[];
   courts: Court[];
   sessions: Session[];
+  bookings: Booking[];
   movements: Movement[];
   transactions: Transaction[];
   settings: Settings;

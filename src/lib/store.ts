@@ -1,6 +1,8 @@
 import { useSyncExternalStore } from "react";
-import { buildSeed, DEFAULT_SETTINGS } from "./seed";
+import { buildBookings, buildSeed, DEFAULT_SETTINGS } from "./seed";
+import { overlaps, toMin } from "./bookings";
 import type {
+  Booking,
   DB,
   Movement,
   MovementType,
@@ -25,6 +27,7 @@ const emptyDB = (): DB => ({
   products: [],
   courts: [],
   sessions: [],
+  bookings: [],
   movements: [],
   transactions: [],
   settings: DEFAULT_SETTINGS,
@@ -37,7 +40,13 @@ function load(): DB {
   try {
     const raw = window.localStorage.getItem(KEY);
     if (raw) {
-      state = JSON.parse(raw) as DB;
+      const parsed = JSON.parse(raw) as DB;
+      // Migrazione: database salvati prima delle prenotazioni.
+      if (!Array.isArray(parsed.bookings) || parsed.bookings.length === 0) {
+        parsed.bookings = buildBookings();
+      }
+      state = parsed;
+      persist();
       return state;
     }
   } catch {
@@ -573,3 +582,71 @@ export function stockState(p: Product): StockState {
   if (p.stock <= p.minStock) return "sottoscorta";
   return "ok";
 }
+
+/* ------------------------------ prenotazioni ------------------------------ */
+
+export type BookingDraft = Omit<Booking, "id" | "createdAt" | "createdBy" | "cancelled">;
+
+function courtIsFree(db: DB, draft: BookingDraft, ignoreId?: string) {
+  const s = toMin(draft.start);
+  const e = toMin(draft.end);
+  return !db.bookings.some(
+    (b) =>
+      !b.cancelled &&
+      b.id !== ignoreId &&
+      b.courtId === draft.courtId &&
+      b.date === draft.date &&
+      overlaps(s, e, toMin(b.start), toMin(b.end)),
+  );
+}
+
+export const reservations = {
+  isFree(draft: BookingDraft, ignoreId?: string) {
+    return courtIsFree(load(), draft, ignoreId);
+  },
+  create(draft: BookingDraft): { ok: boolean; error?: string; id?: string } {
+    const db = load();
+    if (toMin(draft.end) <= toMin(draft.start))
+      return { ok: false, error: "L'orario di fine deve seguire quello di inizio" };
+    if (!courtIsFree(db, draft))
+      return { ok: false, error: "Lo slot è già occupato su questo campo" };
+
+    const id = nid("b");
+    set((d) => {
+      const op = currentOperator(d);
+      d.bookings = [
+        ...d.bookings,
+        {
+          ...draft,
+          id,
+          createdAt: new Date().toISOString(),
+          createdBy: op.name,
+          cancelled: false,
+        },
+      ];
+    });
+    return { ok: true, id };
+  },
+  update(id: string, patch: Partial<Booking>): { ok: boolean; error?: string } {
+    const db = load();
+    const existing = db.bookings.find((b) => b.id === id);
+    if (!existing) return { ok: false, error: "Prenotazione non trovata" };
+    const next = { ...existing, ...patch };
+    if (!courtIsFree(db, next, id))
+      return { ok: false, error: "Lo slot è già occupato su questo campo" };
+    set((d) => {
+      d.bookings = d.bookings.map((b) => (b.id === id ? next : b));
+    });
+    return { ok: true };
+  },
+  cancel(id: string) {
+    set((d) => {
+      d.bookings = d.bookings.map((b) => (b.id === id ? { ...b, cancelled: true } : b));
+    });
+  },
+  remove(id: string) {
+    set((d) => {
+      d.bookings = d.bookings.filter((b) => b.id !== id);
+    });
+  },
+};
