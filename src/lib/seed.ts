@@ -1,4 +1,5 @@
 import type {
+  Booking,
   Court,
   DB,
   Movement,
@@ -304,6 +305,7 @@ export function buildSeed(): DB {
     products,
     courts: COURTS,
     sessions,
+    bookings: buildBookings(),
     movements,
     transactions,
     settings: DEFAULT_SETTINGS,
