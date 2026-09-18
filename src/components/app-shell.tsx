@@ -25,6 +25,7 @@ import { Badge } from "./ui-kit";
 
 const NAV = [
   { to: "/home", label: "Home", icon: LayoutGrid },
+  { to: "/prenotazioni", label: "Prenotazioni", icon: Calendar },
   { to: "/pos", label: "POS", icon: CreditCard },
   { to: "/prodotti", label: "Prodotti", icon: Tag },
   { to: "/magazzino", label: "Magazzino", icon: Package },
@@ -153,7 +154,9 @@ export function AppShell({ children }: { children: ReactNode }) {
       <div className="flex min-h-screen min-w-0 flex-1 flex-col lg:pl-[248px]">
         <header className="sticky top-0 z-30 grid grid-cols-[minmax(0,1fr)_auto] items-center gap-3 border-b border-border bg-surface/90 px-3 py-3 backdrop-blur sm:px-5 lg:flex lg:gap-4 lg:px-6">
           <Link to="/home" className="flex min-w-0 items-center gap-2 lg:hidden">
-            <span className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-primary/15 font-bold text-primary">K</span>
+            <span className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-primary/15 font-bold text-primary">
+              K
+            </span>
             <span className="truncate font-display text-xl font-bold">KAJOKA</span>
           </Link>
           <div className="relative hidden max-w-md flex-1 lg:block">
@@ -164,7 +167,9 @@ export function AppShell({ children }: { children: ReactNode }) {
             />
           </div>
           <div className="flex shrink-0 items-center gap-2 lg:ml-auto lg:gap-3">
-            <div className="hidden lg:block"><Clockface /></div>
+            <div className="hidden lg:block">
+              <Clockface />
+            </div>
             <button className="relative rounded-lg border border-border bg-surface-container p-2.5 text-muted-foreground hover:text-foreground">
               <Bell className="size-4" />
               {lowStock > 0 && (
@@ -190,19 +195,17 @@ export function AppShell({ children }: { children: ReactNode }) {
                 <div className="absolute right-0 z-40 mt-2 w-56 rounded-xl border border-border bg-surface-container p-2 shadow-2xl">
                   <div className="px-3 py-2">
                     <div className="text-sm font-semibold">{user.name}</div>
-                    <div className="mono text-xs text-muted-foreground">
-                      @{user.username}
-                    </div>
+                    <div className="mono text-xs text-muted-foreground">@{user.username}</div>
                   </div>
-                   {isAdmin && (
-                     <Link
-                       to="/impostazioni"
-                       onClick={() => setMenuOpen(false)}
-                       className="flex items-center gap-2 rounded-lg px-3 py-2 text-sm text-muted-foreground hover:bg-surface-high hover:text-foreground"
-                     >
-                       <Settings className="size-4" /> Impostazioni
-                     </Link>
-                   )}
+                  {isAdmin && (
+                    <Link
+                      to="/impostazioni"
+                      onClick={() => setMenuOpen(false)}
+                      className="flex items-center gap-2 rounded-lg px-3 py-2 text-sm text-muted-foreground hover:bg-surface-high hover:text-foreground"
+                    >
+                      <Settings className="size-4" /> Impostazioni
+                    </Link>
+                  )}
                   <button
                     onClick={() => {
                       auth.logout();
