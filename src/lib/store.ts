@@ -40,7 +40,13 @@ function load(): DB {
   try {
     const raw = window.localStorage.getItem(KEY);
     if (raw) {
-      state = JSON.parse(raw) as DB;
+      const parsed = JSON.parse(raw) as DB;
+      // Migrazione: database salvati prima delle prenotazioni.
+      if (!Array.isArray(parsed.bookings) || parsed.bookings.length === 0) {
+        parsed.bookings = buildBookings();
+      }
+      state = parsed;
+      persist();
       return state;
     }
   } catch {
