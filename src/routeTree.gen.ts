@@ -16,6 +16,7 @@ import { Route as LoginRouteImport } from './routes/login'
 import { Route as MagazzinoRouteImport } from './routes/magazzino'
 import { Route as MovimentiRouteImport } from './routes/movimenti'
 import { Route as PosRouteImport } from './routes/pos'
+import { Route as PrenotazioniRouteImport } from './routes/prenotazioni'
 import { Route as ProdottiRouteImport } from './routes/prodotti'
 import { Route as StatisticheRouteImport } from './routes/statistiche'
 import { Route as StoricoRouteImport } from './routes/storico'
@@ -56,6 +57,11 @@ const PosRoute = PosRouteImport.update({
   path: '/pos',
   getParentRoute: () => rootRouteImport,
 } as any)
+const PrenotazioniRoute = PrenotazioniRouteImport.update({
+  id: '/prenotazioni',
+  path: '/prenotazioni',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const ProdottiRoute = ProdottiRouteImport.update({
   id: '/prodotti',
   path: '/prodotti',
@@ -85,6 +91,7 @@ export interface FileRoutesByFullPath {
   '/magazzino': typeof MagazzinoRoute
   '/movimenti': typeof MovimentiRoute
   '/pos': typeof PosRoute
+  '/prenotazioni': typeof PrenotazioniRoute
   '/prodotti': typeof ProdottiRoute
   '/statistiche': typeof StatisticheRoute
   '/storico': typeof StoricoRoute
@@ -98,6 +105,7 @@ export interface FileRoutesByTo {
   '/magazzino': typeof MagazzinoRoute
   '/movimenti': typeof MovimentiRoute
   '/pos': typeof PosRoute
+  '/prenotazioni': typeof PrenotazioniRoute
   '/prodotti': typeof ProdottiRoute
   '/statistiche': typeof StatisticheRoute
   '/storico': typeof StoricoRoute
@@ -112,6 +120,7 @@ export interface FileRoutesById {
   '/magazzino': typeof MagazzinoRoute
   '/movimenti': typeof MovimentiRoute
   '/pos': typeof PosRoute
+  '/prenotazioni': typeof PrenotazioniRoute
   '/prodotti': typeof ProdottiRoute
   '/statistiche': typeof StatisticheRoute
   '/storico': typeof StoricoRoute
@@ -127,6 +136,7 @@ export interface FileRouteTypes {
     | '/magazzino'
     | '/movimenti'
     | '/pos'
+    | '/prenotazioni'
     | '/prodotti'
     | '/statistiche'
     | '/storico'
@@ -140,6 +150,7 @@ export interface FileRouteTypes {
     | '/magazzino'
     | '/movimenti'
     | '/pos'
+    | '/prenotazioni'
     | '/prodotti'
     | '/statistiche'
     | '/storico'
@@ -153,6 +164,7 @@ export interface FileRouteTypes {
     | '/magazzino'
     | '/movimenti'
     | '/pos'
+    | '/prenotazioni'
     | '/prodotti'
     | '/statistiche'
     | '/storico'
@@ -167,6 +179,7 @@ export interface RootRouteChildren {
   MagazzinoRoute: typeof MagazzinoRoute
   MovimentiRoute: typeof MovimentiRoute
   PosRoute: typeof PosRoute
+  PrenotazioniRoute: typeof PrenotazioniRoute
   ProdottiRoute: typeof ProdottiRoute
   StatisticheRoute: typeof StatisticheRoute
   StoricoRoute: typeof StoricoRoute
@@ -224,6 +237,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof PosRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/prenotazioni': {
+      id: '/prenotazioni'
+      path: '/prenotazioni'
+      fullPath: '/prenotazioni'
+      preLoaderRoute: typeof PrenotazioniRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/prodotti': {
       id: '/prodotti'
       path: '/prodotti'
@@ -263,6 +283,7 @@ const rootRouteChildren: RootRouteChildren = {
   MagazzinoRoute: MagazzinoRoute,
   MovimentiRoute: MovimentiRoute,
   PosRoute: PosRoute,
+  PrenotazioniRoute: PrenotazioniRoute,
   ProdottiRoute: ProdottiRoute,
   StatisticheRoute: StatisticheRoute,
   StoricoRoute: StoricoRoute,
