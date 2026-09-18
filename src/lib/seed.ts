@@ -312,3 +312,84 @@ export function buildSeed(): DB {
     currentUserId: null,
   };
 }
+
+/* ------------------------- prenotazioni demo campi ------------------------ */
+
+const BOOKING_NAMES = [
+  ["Alessandro Rossi", "Matteo Bianchi", "Lorenzo Ferrari", "Simone Greco"],
+  ["Giulia Romano", "Chiara Marino", "Sara Costa", "Elena Rizzo"],
+  ["Davide Moretti", "Andrea Conti", "Paolo Gatti", "Luca Serra"],
+  ["Federico Neri", "Marco Sala", "Nicola Bruni", "Stefano Lodi"],
+];
+
+const pad2 = (n: number) => String(n).padStart(2, "0");
+const keyOf = (d: Date) => `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`;
+const hhmm = (min: number) => `${pad2(Math.floor(min / 60) % 24)}:${pad2(min % 60)}`;
+
+export function buildBookings(): Booking[] {
+  const rand = rng(77341);
+  const out: Booking[] = [];
+  const base = new Date();
+  base.setHours(0, 0, 0, 0);
+
+  for (let day = 0; day < 8; day++) {
+    const d = new Date(base.getTime() + day * 86400000);
+    const date = keyOf(d);
+
+    for (const court of COURTS) {
+      let cursor = 9 * 60;
+      while (cursor < 23 * 60) {
+        const busy = rand() < (cursor >= 17 * 60 ? 0.72 : 0.34);
+        const duration = rand() < 0.45 ? 90 : 60;
+        if (!busy) {
+          cursor += 60;
+          continue;
+        }
+        const end = Math.min(cursor + duration, 24 * 60);
+        const roll = rand();
+        const kind: Booking["kind"] =
+          roll < 0.7 ? "partita" : roll < 0.85 ? "lezione" : roll < 0.96 ? "serie" : "manutenzione";
+        const names = BOOKING_NAMES[Math.floor(rand() * BOOKING_NAMES.length)] ?? [];
+        const players =
+          kind === "manutenzione"
+            ? []
+            : court.type === "tennis"
+              ? names.slice(0, 2)
+              : names.slice(0, 4);
+        const extras = rand() < 0.3 ? ["racchette"] : [];
+        const price =
+          kind === "manutenzione"
+            ? 0
+            : Math.round(((court.hourlyPrice * duration) / 60 + extras.length * 6) * 100) / 100;
+
+        out.push({
+          id: `b-${date}-${court.id}-${cursor}`,
+          courtId: court.id,
+          date,
+          start: hhmm(cursor),
+          end: hhmm(end),
+          kind,
+          title:
+            kind === "manutenzione"
+              ? "Manutenzione campo"
+              : kind === "lezione"
+                ? "Lezione privata"
+                : kind === "serie"
+                  ? "Allenamento serie"
+                  : (players[0] ?? "Partita"),
+          players,
+          extras,
+          price,
+          note: "",
+          createdAt: new Date().toISOString(),
+          createdBy: "Sistema",
+          cancelled: false,
+        });
+
+        cursor = end + (rand() < 0.5 ? 0 : 30);
+      }
+    }
+  }
+
+  return out;
+}
