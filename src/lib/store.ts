@@ -1,8 +1,9 @@
 import { useSyncExternalStore } from "react";
 import { buildBookings, buildSeed, DEFAULT_SETTINGS } from "./seed";
-import { overlaps, toMin } from "./bookings";
+import { expandRecurrence, overlaps, toMin } from "./bookings";
 import type {
   Booking,
+  RecurrenceRule,
   DB,
   Movement,
   MovementType,
@@ -701,7 +702,6 @@ export const series = {
     if (toMin(draft.end) <= toMin(draft.start))
       return { ok: false, error: "L'orario di fine deve seguire quello di inizio" };
     if (rule.until < draft.date) return { ok: false, error: "La data di fine precede la data di inizio" };
-    const db = load();
     const prev = series.preview(draft, rule);
     if (!prev.length) return { ok: false, error: "Nessuna data generata dalla regola" };
     const conflicts = prev.filter((p) => p.conflict);
@@ -731,7 +731,6 @@ export const series = {
         })),
       ];
     });
-    void db;
     return { ok: true, created: free.length, skipped };
   },
   /** Modifica uno, i futuri o tutti i blocchi. Fallisce senza modifiche se anche un solo blocco va in conflitto. */
@@ -775,11 +774,7 @@ export const series = {
           members.forEach((m) => exc.add(m.date));
           return {
             ...b,
-            recurrence: {
-              ...b.recurrence,
-              exceptions: [...exc].sort(),
-              until: scope === "future" && base.date <= b.recurrence.until ? b.recurrence.until : b.recurrence.until,
-            },
+            recurrence: { ...b.recurrence, exceptions: [...exc].sort() },
           };
         }
         return b;
