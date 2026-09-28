@@ -449,7 +449,7 @@ function BookingForm({
       extras: kind === "manutenzione" ? [] : extras,
       price: total,
       note,
-      source: initial?.source,
+      source: initial?.source ?? ("manuale" as const),
     };
     if (recurring) {
       const r = series.create(draft, rule, skipConflicts);
@@ -712,7 +712,10 @@ function BookingDetail({
       { courtId: eCourt, start: eStart, end, price: bookingPrice(c, eDur, booking.extras) },
       booking.seriesId ? scope : "this",
     );
-    if (!r.ok) return toast.error(r.error ?? "Modifica non riuscita");
+    if (!r.ok) {
+      toast.error(r.error ?? "Modifica non riuscita");
+      return;
+    }
     toast.success(`Aggiornati ${r.updated} blocchi`);
     setEditing(false);
   };
@@ -910,7 +913,7 @@ function AiAssistant({ onExtract }: { onExtract: (init: FormInit) => void }) {
       onExtract({
         courtId: x.courtId ?? "",
         start: x.start ? toMin(x.start) : OPEN_FROM,
-        date: x.date ?? undefined,
+        ...(x.date ? { date: x.date } : {}),
         duration: x.durationMin && [60, 90, 120].includes(x.durationMin) ? x.durationMin : 90,
         kind: x.kind ?? "partita",
         players: x.players,
