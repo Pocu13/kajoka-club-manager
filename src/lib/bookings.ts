@@ -117,3 +117,38 @@ export function bookingPrice(court: Court, minutes: number, extras: string[]) {
   );
   return Math.round((base + add) * 100) / 100;
 }
+
+/* ------------------------------ ricorrenze ------------------------------ */
+
+import type { RecurrenceFreq, RecurrenceRule } from "./types";
+
+export const FREQ_LABEL: Record<RecurrenceFreq, string> = {
+  daily: "Ogni giorno",
+  weekly: "Ogni settimana",
+  biweekly: "Ogni 2 settimane",
+  monthly: "Ogni mese",
+};
+
+export const MAX_OCCURRENCES = 120;
+
+/** Date generate dalla regola (esclusa la lista eccezioni). */
+export function expandRecurrence(startDate: string, rule: RecurrenceRule): string[] {
+  const out: string[] = [];
+  const start = parseDateKey(startDate);
+  const until = parseDateKey(rule.until);
+  const excluded = new Set(rule.exceptions);
+  for (let i = 0; out.length < MAX_OCCURRENCES; i++) {
+    const d = new Date(start);
+    if (rule.freq === "daily") d.setDate(start.getDate() + i);
+    else if (rule.freq === "weekly") d.setDate(start.getDate() + i * 7);
+    else if (rule.freq === "biweekly") d.setDate(start.getDate() + i * 14);
+    else {
+      d.setMonth(start.getMonth() + i);
+      if (d.getDate() !== start.getDate()) continue; // es. 31 in mesi più corti
+    }
+    if (d > until) break;
+    const k = dateKey(d);
+    if (!excluded.has(k)) out.push(k);
+  }
+  return out;
+}
