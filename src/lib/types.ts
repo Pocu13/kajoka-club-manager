@@ -148,6 +148,21 @@ export interface Booking {
   createdAt: string;
   createdBy: string;
   cancelled: boolean;
+  /** Serie ricorrente di appartenenza */
+  seriesId?: string;
+  recurrence?: RecurrenceRule;
+  /** Origine: inserimento manuale o richiesta AI */
+  source?: "manuale" | "ai";
+}
+
+export type RecurrenceFreq = "daily" | "weekly" | "biweekly" | "monthly";
+
+export interface RecurrenceRule {
+  freq: RecurrenceFreq;
+  /** Data di fine inclusa AAAA-MM-GG */
+  until: string;
+  /** Date escluse AAAA-MM-GG */
+  exceptions: string[];
 }
 
 export interface Settings {

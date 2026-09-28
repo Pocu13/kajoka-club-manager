@@ -1,8 +1,9 @@
 import { useSyncExternalStore } from "react";
 import { buildBookings, buildSeed, DEFAULT_SETTINGS } from "./seed";
-import { overlaps, toMin } from "./bookings";
+import { expandRecurrence, overlaps, toMin } from "./bookings";
 import type {
   Booking,
+  RecurrenceRule,
   DB,
   Movement,
   MovementType,
@@ -648,5 +649,137 @@ export const reservations = {
     set((d) => {
       d.bookings = d.bookings.filter((b) => b.id !== id);
     });
+  },
+};
+
+/* --------------------------- serie ricorrenti --------------------------- */
+
+export type SeriesScope = "this" | "future" | "all";
+
+export interface OccurrencePreview {
+  date: string;
+  conflict: Booking | null;
+}
+
+function findConflict(db: DB, d: { courtId: string; date: string; start: string; end: string }, ignore: Set<string>) {
+  const s = toMin(d.start);
+  const e = toMin(d.end);
+  return (
+    db.bookings.find(
+      (b) =>
+        !b.cancelled &&
+        !ignore.has(b.id) &&
+        b.courtId === d.courtId &&
+        b.date === d.date &&
+        overlaps(s, e, toMin(b.start), toMin(b.end)),
+    ) ?? null
+  );
+}
+
+function scopeMembers(db: DB, seriesId: string, scope: SeriesScope, fromDate: string, id?: string) {
+  return db.bookings.filter(
+    (b) =>
+      b.seriesId === seriesId &&
+      !b.cancelled &&
+      (scope === "all" || (scope === "future" ? b.date >= fromDate : b.id === id)),
+  );
+}
+
+export const series = {
+  preview(draft: BookingDraft, rule: RecurrenceRule): OccurrencePreview[] {
+    const db = load();
+    return expandRecurrence(draft.date, rule).map((date) => ({
+      date,
+      conflict: findConflict(db, { ...draft, date }, new Set()),
+    }));
+  },
+  /** Crea tutti i blocchi in modo atomico. Con skipConflicts le date occupate vengono aggiunte alle eccezioni. */
+  create(
+    draft: BookingDraft,
+    rule: RecurrenceRule,
+    skipConflicts: boolean,
+  ): { ok: boolean; error?: string; created?: number; skipped?: string[] } {
+    if (toMin(draft.end) <= toMin(draft.start))
+      return { ok: false, error: "L'orario di fine deve seguire quello di inizio" };
+    if (rule.until < draft.date) return { ok: false, error: "La data di fine precede la data di inizio" };
+    const prev = series.preview(draft, rule);
+    if (!prev.length) return { ok: false, error: "Nessuna data generata dalla regola" };
+    const conflicts = prev.filter((p) => p.conflict);
+    if (conflicts.length && !skipConflicts)
+      return {
+        ok: false,
+        error: `${conflicts.length} date in conflitto: ${conflicts.map((c) => c.date).join(", ")}`,
+      };
+    const skipped = conflicts.map((c) => c.date);
+    const finalRule = { ...rule, exceptions: [...new Set([...rule.exceptions, ...skipped])] };
+    const seriesId = nid("s");
+    const free = prev.filter((p) => !p.conflict);
+    set((d) => {
+      const op = currentOperator(d);
+      const now = new Date().toISOString();
+      d.bookings = [
+        ...d.bookings,
+        ...free.map((p) => ({
+          ...draft,
+          date: p.date,
+          id: nid("b"),
+          createdAt: now,
+          createdBy: op.name,
+          cancelled: false,
+          seriesId,
+          recurrence: finalRule,
+        })),
+      ];
+    });
+    return { ok: true, created: free.length, skipped };
+  },
+  /** Modifica uno, i futuri o tutti i blocchi. Fallisce senza modifiche se anche un solo blocco va in conflitto. */
+  update(
+    id: string,
+    patch: Partial<Pick<Booking, "courtId" | "start" | "end" | "kind" | "title" | "players" | "note" | "price">>,
+    scope: SeriesScope,
+  ): { ok: boolean; error?: string; updated?: number } {
+    const db = load();
+    const base = db.bookings.find((b) => b.id === id);
+    if (!base) return { ok: false, error: "Prenotazione non trovata" };
+    const members = base.seriesId ? scopeMembers(db, base.seriesId, scope, base.date, id) : [base];
+    const ignore = new Set(members.map((m) => m.id));
+    const next = members.map((m) => ({ ...m, ...patch }));
+    if (next.some((n) => toMin(n.end) <= toMin(n.start)))
+      return { ok: false, error: "L'orario di fine deve seguire quello di inizio" };
+    const clashes = next.filter((n) => findConflict(db, n, ignore));
+    if (clashes.length)
+      return {
+        ok: false,
+        error: `Conflitto su ${clashes.length} blocchi: ${clashes.map((c) => c.date).join(", ")}`,
+      };
+    const map = new Map(next.map((n) => [n.id, n]));
+    set((d) => {
+      d.bookings = d.bookings.map((b) => map.get(b.id) ?? b);
+    });
+    return { ok: true, updated: next.length };
+  },
+  /** Annulla blocchi: "this" aggiunge anche l'eccezione alla regola. */
+  cancel(id: string, scope: SeriesScope): number {
+    const db = load();
+    const base = db.bookings.find((b) => b.id === id);
+    if (!base) return 0;
+    const members = base.seriesId ? scopeMembers(db, base.seriesId, scope, base.date, id) : [base];
+    const ids = new Set(members.map((m) => m.id));
+    set((d) => {
+      d.bookings = d.bookings.map((b) => {
+        if (ids.has(b.id)) return { ...b, cancelled: true };
+        if (base.seriesId && b.seriesId === base.seriesId && b.recurrence) {
+          const exc = new Set(b.recurrence.exceptions);
+          members.forEach((m) => exc.add(m.date));
+          return {
+            ...b,
+            recurrence: { ...b.recurrence, exceptions: [...exc].sort() },
+          };
+        }
+        return b;
+      });
+    });
+    return ids.size;
   },
 };

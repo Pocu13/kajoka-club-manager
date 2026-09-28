@@ -1,17 +1,21 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
-import { CalendarPlus, ChevronLeft, ChevronRight, Clock, Euro, Trash2 } from "lucide-react";
+import { CalendarPlus, ChevronLeft, ChevronRight, Clock, Euro, Loader2, Pencil, Repeat, Trash2, Wand2 } from "lucide-react";
+import { useServerFn } from "@tanstack/react-start";
+import { parseBookingRequest } from "@/lib/ai-booking.functions";
 import { AppShell } from "@/components/app-shell";
 import { Badge, Btn, Drawer, Field, Input, Modal, Panel, Select } from "@/components/ui-kit";
-import { reservations, useCurrentUser, useDB } from "@/lib/store";
+import { reservations, series, useCurrentUser, useDB, type SeriesScope } from "@/lib/store";
 import { eur } from "@/lib/format";
 import {
   bookingPrice,
   courtsOf,
   dateKey,
   EXTRAS,
+  expandRecurrence,
   FAMILIES,
+  FREQ_LABEL,
   KIND_CLS,
   KIND_LABEL,
   minutesNow,
@@ -21,7 +25,18 @@ import {
   toMin,
   type FamilyKey,
 } from "@/lib/bookings";
-import type { Booking, BookingKind } from "@/lib/types";
+import type { Booking, BookingKind, RecurrenceFreq } from "@/lib/types";
+
+export type FormInit = {
+  courtId: string;
+  start: number;
+  date?: string;
+  duration?: number;
+  kind?: BookingKind;
+  players?: string[];
+  note?: string;
+  source?: "ai";
+};
 import { cn } from "@/lib/utils";
 
 const PPM = 1.7; // pixel per minuto
@@ -64,7 +79,7 @@ function BookingsPage() {
   const [dayOffset, setDayOffset] = useState(0);
   const [now, setNow] = useState(() => minutesNow());
   const [detail, setDetail] = useState<string | null>(null);
-  const [form, setForm] = useState<{ courtId: string; start: number } | null>(null);
+  const [form, setForm] = useState<FormInit | null>(null);
 
   useEffect(() => {
     const t = window.setInterval(() => setNow(minutesNow()), 30_000);
@@ -119,6 +134,8 @@ function BookingsPage() {
           <CalendarPlus className="size-4" /> Nuova prenotazione
         </Btn>
       </div>
+
+      <AiAssistant onExtract={(init) => setForm(init)} />
 
       <div className="flex flex-wrap items-center gap-1 border-b border-border pb-2">
         {FAMILIES.map((f) => {
@@ -267,7 +284,8 @@ function BookingsPage() {
                         )}
                         style={{ left: left + 2, width: width - 4 }}
                       >
-                        <span className="mono block text-[10px] font-bold opacity-90">
+                        <span className="mono flex items-center gap-1 text-[10px] font-bold opacity-90">
+                          {b.seriesId && <Repeat className="size-3" />}
                           {b.start} → {b.end}
                         </span>
                         <span className="mt-1 block truncate text-[11px] font-semibold">
@@ -352,10 +370,17 @@ function BookingForm({
   onClose: () => void;
   date: string;
   family: FamilyKey;
-  initial: { courtId: string; start: number } | null;
+  initial: FormInit | null;
 }) {
   const db = useDB();
-  const courts = courtsOf(db.courts, family);
+  const courts = db.courts.filter((c) => c.active);
+  void family;
+  const [bDate, setBDate] = useState(date);
+  const [recurring, setRecurring] = useState(false);
+  const [freq, setFreq] = useState<RecurrenceFreq>("weekly");
+  const [until, setUntil] = useState(date);
+  const [exceptions, setExceptions] = useState<string[]>([]);
+  const [skipConflicts, setSkipConflicts] = useState(true);
 
   const [courtId, setCourtId] = useState("");
   const [start, setStart] = useState("09:00");
@@ -369,11 +394,18 @@ function BookingForm({
     if (!open || !initial) return;
     setCourtId(initial.courtId || (courts[0]?.id ?? ""));
     setStart(toHHMM(initial.start));
-    setDuration(90);
-    setKind("partita");
-    setPlayers("");
+    setDuration(initial.duration ?? 90);
+    setKind(initial.kind ?? "partita");
+    setPlayers((initial.players ?? []).join(", "));
     setExtras([]);
-    setNote("");
+    setNote(initial.note ?? "");
+    const d0 = initial.date ?? date;
+    setBDate(d0);
+    const u = new Date(d0);
+    u.setDate(u.getDate() + 28);
+    setUntil(u.toISOString().slice(0, 10));
+    setRecurring(false);
+    setExceptions([]);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, initial?.courtId, initial?.start]);
 
@@ -385,11 +417,23 @@ function BookingForm({
     .map((n) => n.trim())
     .filter(Boolean);
 
+  const rule = { freq, until, exceptions };
+  const preview = useMemo(
+    () =>
+      recurring && court
+        ? series.preview({ courtId: court.id, date: bDate, start, end, kind, title: "", players: [], extras: [], price: 0, note: "" }, rule)
+        : [],
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [recurring, court?.id, bDate, start, end, freq, until, exceptions.join(","), db.bookings],
+  );
+  const conflicts = preview.filter((p) => p.conflict).length;
+  const allDates = recurring ? expandRecurrence(bDate, { freq, until, exceptions: [] }) : [];
+
   const submit = () => {
     if (!court) return;
-    const res = reservations.create({
+    const draft = {
       courtId: court.id,
-      date,
+      date: bDate,
       start,
       end,
       kind,
@@ -405,7 +449,19 @@ function BookingForm({
       extras: kind === "manutenzione" ? [] : extras,
       price: total,
       note,
-    });
+      source: initial?.source,
+    };
+    if (recurring) {
+      const r = series.create(draft, rule, skipConflicts);
+      if (!r.ok) {
+        toast.error(r.error ?? "Impossibile creare la serie");
+        return;
+      }
+      toast.success(`Serie creata: ${r.created} blocchi${r.skipped?.length ? ` · ${r.skipped.length} date saltate per conflitto` : ""}`);
+      onClose();
+      return;
+    }
+    const res = reservations.create(draft);
     if (!res.ok) {
       toast.error(res.error ?? "Impossibile salvare la prenotazione");
       return;
@@ -419,15 +475,15 @@ function BookingForm({
       open={open}
       onClose={onClose}
       width="w-[460px]"
-      title="Nuova prenotazione"
-      subtitle="Compila i dettagli per riservare lo slot"
+      title={initial?.source === "ai" ? "Verifica prenotazione AI" : "Nuova prenotazione"}
+      subtitle={initial?.source === "ai" ? "Controlla i dati estratti prima di confermare" : "Compila i dettagli per riservare lo slot"}
       footer={
         <div className="grid grid-cols-2 gap-2">
           <Btn variant="outline" onClick={onClose}>
             Annulla
           </Btn>
-          <Btn variant="primary" onClick={submit} disabled={!court}>
-            Conferma prenotazione
+          <Btn variant="primary" onClick={submit} disabled={!court || (recurring && conflicts > 0 && !skipConflicts)}>
+            {recurring ? `Crea ${preview.length - (skipConflicts ? conflicts : 0)} blocchi` : "Conferma prenotazione"}
           </Btn>
         </div>
       }
@@ -441,6 +497,10 @@ function BookingForm({
               </option>
             ))}
           </Select>
+        </Field>
+
+        <Field label="Data">
+          <Input type="date" value={bDate} onChange={(e) => setBDate(e.target.value)} />
         </Field>
 
         <div className="grid grid-cols-2 gap-3">
@@ -513,6 +573,67 @@ function BookingForm({
           </>
         )}
 
+        <Panel className="space-y-3 p-4">
+          <label className="flex items-center gap-2 text-sm font-semibold">
+            <input type="checkbox" checked={recurring} onChange={(e) => setRecurring(e.target.checked)} />
+            <Repeat className="size-4 text-primary" /> Prenotazione ricorrente
+          </label>
+          {recurring && (
+            <>
+              <div className="grid grid-cols-2 gap-3">
+                <Field label="Frequenza">
+                  <Select value={freq} onChange={(e) => setFreq(e.target.value as RecurrenceFreq)}>
+                    {(Object.keys(FREQ_LABEL) as RecurrenceFreq[]).map((f) => (
+                      <option key={f} value={f}>{FREQ_LABEL[f]}</option>
+                    ))}
+                  </Select>
+                </Field>
+                <Field label="Fino al">
+                  <Input type="date" min={bDate} value={until} onChange={(e) => setUntil(e.target.value)} />
+                </Field>
+              </div>
+              <div>
+                <div className="label-caps mb-2 text-muted-foreground">
+                  Date generate ({preview.length}) · tocca per escludere
+                </div>
+                <div className="flex max-h-44 flex-wrap gap-1.5 overflow-y-auto">
+                  {allDates.map((d) => {
+                    const excluded = exceptions.includes(d);
+                    const p = preview.find((x) => x.date === d);
+                    return (
+                      <button
+                        key={d}
+                        type="button"
+                        onClick={() => setExceptions((l) => (excluded ? l.filter((x) => x !== d) : [...l, d]))}
+                        title={p?.conflict ? `Occupato: ${p.conflict.title} ${p.conflict.start}–${p.conflict.end}` : excluded ? "Esclusa" : "Libera"}
+                        className={cn(
+                          "mono rounded border px-2 py-1 text-[11px]",
+                          excluded
+                            ? "border-border text-muted-foreground line-through"
+                            : p?.conflict
+                              ? "border-destructive bg-destructive/15 text-destructive"
+                              : "border-success/50 bg-success/10 text-success",
+                        )}
+                      >
+                        {d.slice(8)}/{d.slice(5, 7)}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+              {conflicts > 0 && (
+                <div className="space-y-2 rounded-lg border border-destructive/50 bg-destructive/10 p-3 text-xs">
+                  <div className="font-semibold text-destructive">{conflicts} date sovrapposte a prenotazioni esistenti</div>
+                  <label className="flex items-center gap-2">
+                    <input type="checkbox" checked={skipConflicts} onChange={(e) => setSkipConflicts(e.target.checked)} />
+                    Salta le date in conflitto (diventano eccezioni)
+                  </label>
+                </div>
+              )}
+            </>
+          )}
+        </Panel>
+
         <Field label="Note">
           <Input value={note} onChange={(e) => setNote(e.target.value)} placeholder="Opzionale" />
         </Field>
@@ -565,7 +686,36 @@ function BookingDetail({
 }) {
   const db = useDB();
   const [confirm, setConfirm] = useState(false);
+  const [scope, setScope] = useState<SeriesScope>("this");
+  const [editing, setEditing] = useState(false);
+  const [eStart, setEStart] = useState("");
+  const [eDur, setEDur] = useState(90);
+  const [eCourt, setECourt] = useState("");
+  useEffect(() => {
+    if (!booking) return;
+    setScope("this");
+    setEditing(false);
+    setEStart(booking.start);
+    setEDur(toMin(booking.end) - toMin(booking.start));
+    setECourt(booking.courtId);
+  }, [booking?.id]); // eslint-disable-line react-hooks/exhaustive-deps
   if (!booking) return null;
+  const seriesCount = booking.seriesId
+    ? db.bookings.filter((b) => b.seriesId === booking.seriesId && !b.cancelled).length
+    : 0;
+  const saveEdit = () => {
+    const c = db.courts.find((x) => x.id === eCourt);
+    if (!c) return;
+    const end = toHHMM(Math.min(OPEN_TO, toMin(eStart) + eDur));
+    const r = series.update(
+      booking.id,
+      { courtId: eCourt, start: eStart, end, price: bookingPrice(c, eDur, booking.extras) },
+      booking.seriesId ? scope : "this",
+    );
+    if (!r.ok) return toast.error(r.error ?? "Modifica non riuscita");
+    toast.success(`Aggiornati ${r.updated} blocchi`);
+    setEditing(false);
+  };
   const court = db.courts.find((c) => c.id === booking.courtId);
 
   return (
@@ -576,10 +726,19 @@ function BookingDetail({
         title={booking.title}
         subtitle={`${court?.name ?? "Campo"} · ${booking.start} → ${booking.end}`}
         footer={
-          canCancel ? (
-            <Btn variant="danger" className="w-full" onClick={() => setConfirm(true)}>
-              <Trash2 className="size-4" /> Annulla prenotazione
-            </Btn>
+          canCancel && !booking.cancelled ? (
+            <div className="grid grid-cols-2 gap-2">
+              {editing ? (
+                <Btn variant="primary" onClick={saveEdit}>Salva modifiche</Btn>
+              ) : (
+                <Btn variant="outline" onClick={() => setEditing(true)}>
+                  <Pencil className="size-4" /> Modifica
+                </Btn>
+              )}
+              <Btn variant="danger" onClick={() => setConfirm(true)}>
+                <Trash2 className="size-4" /> Annulla
+              </Btn>
+            </div>
           ) : undefined
         }
       >
@@ -589,7 +748,52 @@ function BookingDetail({
               {booking.cancelled ? "ANNULLATA" : KIND_LABEL[booking.kind].toUpperCase()}
             </Badge>
             <Badge tone="neutral">{booking.date}</Badge>
+            {booking.source === "ai" && <Badge tone="info">DA AI</Badge>}
           </div>
+
+          {booking.seriesId && booking.recurrence && (
+            <Panel className="space-y-2 p-4">
+              <div className="flex items-center gap-2 text-sm font-semibold">
+                <Repeat className="size-4 text-primary" /> Serie ricorrente · {seriesCount} blocchi attivi
+              </div>
+              <div className="mono text-xs text-muted-foreground">
+                {FREQ_LABEL[booking.recurrence.freq]} fino al {booking.recurrence.until}
+                {booking.recurrence.exceptions.length > 0 && ` · eccezioni: ${booking.recurrence.exceptions.join(", ")}`}
+              </div>
+              <Field label="Applica modifiche / annullamento a">
+                <Select value={scope} onChange={(e) => setScope(e.target.value as SeriesScope)}>
+                  <option value="this">Solo questo blocco</option>
+                  <option value="future">Questo e i successivi</option>
+                  <option value="all">Tutta la serie</option>
+                </Select>
+              </Field>
+            </Panel>
+          )}
+
+          {editing && (
+            <Panel className="space-y-3 p-4">
+              <Field label="Campo">
+                <Select value={eCourt} onChange={(e) => setECourt(e.target.value)}>
+                  {db.courts.filter((c) => c.active).map((c) => (
+                    <option key={c.id} value={c.id}>{c.name}</option>
+                  ))}
+                </Select>
+              </Field>
+              <div className="grid grid-cols-2 gap-3">
+                <Field label="Ora inizio">
+                  <Input type="time" step={1800} value={eStart} onChange={(e) => setEStart(e.target.value)} />
+                </Field>
+                <Field label="Durata">
+                  <Select value={eDur} onChange={(e) => setEDur(Number(e.target.value))}>
+                    {[60, 90, 120].map((m) => <option key={m} value={m}>{m} min</option>)}
+                  </Select>
+                </Field>
+              </div>
+              <p className="text-xs text-muted-foreground">
+                Se anche un solo blocco va in conflitto, nessuna modifica viene applicata.
+              </p>
+            </Panel>
+          )}
 
           <Panel className="space-y-2 p-4">
             <Row label="Campo" value={court?.name ?? "—"} />
@@ -651,8 +855,8 @@ function BookingDetail({
             <Btn
               variant="danger"
               onClick={() => {
-                reservations.cancel(booking.id);
-                toast.success("Prenotazione annullata, slot liberato");
+                const n = series.cancel(booking.id, booking.seriesId ? scope : "this");
+                toast.success(n > 1 ? `${n} blocchi annullati` : "Prenotazione annullata, slot liberato");
                 setConfirm(false);
                 onClose();
               }}
@@ -668,5 +872,82 @@ function BookingDetail({
         </p>
       </Modal>
     </>
+  );
+}
+
+const WEEKDAYS = ["domenica", "lunedì", "martedì", "mercoledì", "giovedì", "venerdì", "sabato"];
+
+function AiAssistant({ onExtract }: { onExtract: (init: FormInit) => void }) {
+  const db = useDB();
+  const parse = useServerFn(parseBookingRequest);
+  const [text, setText] = useState("");
+  const [loading, setLoading] = useState(false);
+  const [info, setInfo] = useState<{ summary: string; missing: string[] } | null>(null);
+  const [error, setError] = useState("");
+
+  const run = async () => {
+    if (text.trim().length < 3 || loading) return;
+    setLoading(true);
+    setError("");
+    setInfo(null);
+    try {
+      const n = new Date();
+      const r = await parse({
+        data: {
+          text,
+          today: dateKey(n),
+          weekday: WEEKDAYS[n.getDay()] ?? "",
+          now: toHHMM(minutesNow(n)),
+          courts: db.courts.filter((c) => c.active).map((c) => ({ id: c.id, name: c.name, type: c.type })),
+        },
+      });
+      if (!r.ok) {
+        setError(r.error);
+        return;
+      }
+      const x = r.result;
+      setInfo({ summary: x.summary, missing: x.missing });
+      onExtract({
+        courtId: x.courtId ?? "",
+        start: x.start ? toMin(x.start) : OPEN_FROM,
+        date: x.date ?? undefined,
+        duration: x.durationMin && [60, 90, 120].includes(x.durationMin) ? x.durationMin : 90,
+        kind: x.kind ?? "partita",
+        players: x.players,
+        note: x.note,
+        source: "ai",
+      });
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Errore imprevisto");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <Panel className="space-y-2 p-3">
+      <div className="label-caps flex items-center gap-2 text-primary">
+        <Wand2 className="size-4" /> Prenotazione rapida con AI
+      </div>
+      <div className="flex flex-col gap-2 sm:flex-row">
+        <Input
+          value={text}
+          onChange={(e) => setText(e.target.value)}
+          onKeyDown={(e) => e.key === "Enter" && run()}
+          placeholder="Es. domani alle 18:30 padel 2 per 90 minuti, Rossi e Bianchi"
+          className="flex-1"
+        />
+        <Btn variant="primary" onClick={run} disabled={loading || text.trim().length < 3}>
+          {loading ? <Loader2 className="size-4 animate-spin" /> : <Wand2 className="size-4" />} Estrai
+        </Btn>
+      </div>
+      {error && <p className="text-xs text-destructive">{error}</p>}
+      {info && (
+        <p className="text-xs text-muted-foreground">
+          {info.summary}
+          {info.missing.length > 0 && <span className="text-warning"> · Da verificare: {info.missing.join(", ")}</span>}
+        </p>
+      )}
+    </Panel>
   );
 }
