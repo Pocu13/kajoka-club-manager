@@ -127,6 +127,8 @@ export interface Session {
   total: number;
   players: Player[];
   closed: boolean;
+  /** Prenotazione da cui è stato fatto il check-in */
+  bookingId?: string;
 }
 
 export type BookingKind = "partita" | "lezione" | "serie" | "manutenzione";

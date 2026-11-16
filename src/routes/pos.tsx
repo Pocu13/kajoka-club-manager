@@ -13,7 +13,7 @@ import {
   Panel,
   Select,
 } from "@/components/ui-kit";
-import { sales, stockState, useDB } from "@/lib/store";
+import { courtSessions, sales, stockState, useDB } from "@/lib/store";
 import { eur } from "@/lib/format";
 import type { PaymentMethod, TxItem } from "@/lib/types";
 import { cn } from "@/lib/utils";
@@ -54,6 +54,9 @@ function PosPage() {
   const [lines, setLines] = useState<Line[]>([]);
   const [discount, setDiscount] = useState("0");
   const [payOpen, setPayOpen] = useState(false);
+  const [tabOpen, setTabOpen] = useState(false);
+  const [tabTarget, setTabTarget] = useState("");
+  const openSessions = db.sessions.filter((s) => !s.closed);
   const [method, setMethod] = useState<PaymentMethod>(db.settings.posDefaultMethod);
   const [cash, setCash] = useState("0");
   const [mobileCartOpen, setMobileCartOpen] = useState(false);
@@ -112,6 +115,20 @@ function PosPage() {
         .map((l) => (l.productId === productId ? { ...l, qty: l.qty + delta } : l))
         .filter((l) => l.qty > 0),
     );
+  }
+
+  function chargeToCourt() {
+    const [sid, pid] = tabTarget.split("|");
+    if (!sid || !pid) return;
+    cart.forEach((l) => {
+      for (let i = 0; i < l.qty; i++) courtSessions.addExtra(sid, pid, l.product.id);
+    });
+    const s = db.sessions.find((x) => x.id === sid);
+    const c = db.courts.find((x) => x.id === s?.courtId);
+    const pl = s?.players.find((x) => x.id === pid);
+    setLines([]);
+    setTabOpen(false);
+    toast.success(`Addebitato a ${c?.name} · ${pl?.name} — saldo a fine partita`);
   }
 
   function confirm() {
@@ -303,8 +320,48 @@ function PosPage() {
         >
           Incassa {eur(total)}
           </Btn>
+          <Btn
+            variant="subtle"
+            disabled={cart.length === 0 || openSessions.length === 0}
+            onClick={() => setTabOpen(true)}
+          >
+            Addebita a conto campo
+          </Btn>
         </div>
       </Panel>
+
+      <Modal
+        open={tabOpen}
+        onClose={() => setTabOpen(false)}
+        title="Addebita a conto campo"
+        footer={
+          <>
+            <Btn variant="subtle" onClick={() => setTabOpen(false)}>
+              Annulla
+            </Btn>
+            <Btn variant="primary" disabled={!tabTarget} onClick={chargeToCourt}>
+              Addebita {eur(cart.reduce((a, l) => a + l.qty * l.product.price, 0))}
+            </Btn>
+          </>
+        }
+      >
+        <Field label="Campo e giocatore">
+          <Select value={tabTarget} onChange={(e) => setTabTarget(e.target.value)}>
+            <option value="">Seleziona…</option>
+            {openSessions.map((s) => {
+              const c = db.courts.find((x) => x.id === s.courtId);
+              return s.players.map((p) => (
+                <option key={s.id + p.id} value={`${s.id}|${p.id}`}>
+                  {c?.name} · {p.name}
+                </option>
+              ));
+            })}
+          </Select>
+        </Field>
+        <p className="mt-3 text-xs text-muted-foreground">
+          Le consumazioni vengono scaricate dal magazzino e incassate alla chiusura della sessione. Sconti non applicati.
+        </p>
+      </Modal>
 
       <Modal
         open={payOpen}

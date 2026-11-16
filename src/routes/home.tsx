@@ -366,12 +366,16 @@ function HomePage() {
                 {db.courts.map((c) => {
                   const activeSession = sessionByCourt.get(c.id);
                   const activeBooking = bookingByCourt.get(c.id);
+                  const upcoming = nextBookingByCourt.get(c.id);
+                  const minsToNext = upcoming ? toMin(upcoming.start) - currentMinute : null;
                   const position = getCourtPosition(c);
                   const status = activeSession
-                    ? "OCCUPATO"
+                    ? "IN CORSO"
                     : activeBooking
-                      ? "PRENOTATO"
-                      : "LIBERO";
+                      ? `PRENOTATO → ${activeBooking.end}`
+                      : minsToNext !== null && minsToNext <= 60
+                        ? `LIBERO · TRA ${minsToNext}′`
+                        : "LIBERO";
 
                   return (
                     <button
@@ -530,6 +534,14 @@ function HomePage() {
         onClose={() => setSelected(null)}
         canManage={!!user}
         onStart={() => setNewOpen(true)}
+        onCheckIn={(b) => {
+          try {
+            courtSessions.checkIn(b);
+            toast.success(`Check-in ${b.title || "prenotazione"} — sessione avviata`);
+          } catch (e) {
+            toast.error((e as Error).message);
+          }
+        }}
       />
 
       <NewSessionModal
@@ -561,6 +573,7 @@ function SessionDrawer({
   upcomingBooking,
   onClose,
   onStart,
+  onCheckIn,
 }: {
   court: Court | null;
   session: Session | null;
@@ -569,6 +582,7 @@ function SessionDrawer({
   onClose: () => void;
   canManage: boolean;
   onStart: () => void;
+  onCheckIn: (b: Booking) => void;
 }) {
   const db = useDB();
   const [selPlayer, setSelPlayer] = useState<string | null>(null);
@@ -672,16 +686,23 @@ function SessionDrawer({
               </Btn>
             </div>
           ) : (
-            <Btn
-              variant="primary"
-              className="w-full"
-              onClick={() => {
-                onStart();
-                onClose();
-              }}
-            >
-              <Plus className="size-4" /> Avvia sessione su {court.name}
-            </Btn>
+            <div className="grid gap-2">
+              {booking && booking.kind !== "manutenzione" && (
+                <Btn variant="primary" className="w-full" onClick={() => onCheckIn(booking)}>
+                  <Users2 className="size-4" /> Check-in {booking.start}–{booking.end} · {eur(booking.price)}
+                </Btn>
+              )}
+              <Btn
+                variant={booking ? "subtle" : "primary"}
+                className="w-full"
+                onClick={() => {
+                  onStart();
+                  onClose();
+                }}
+              >
+                <Plus className="size-4" /> {booking ? "Sessione personalizzata" : `Avvia sessione su ${court.name}`}
+              </Btn>
+            </div>
           )
         }
       >

@@ -347,12 +347,32 @@ export const sales = {
 /* -------------------------------- sessions -------------------------------- */
 
 export const courtSessions = {
+  /** Check-in con un click: avvia la sessione dai dati della prenotazione. */
+  checkIn(booking: Booking) {
+    const d0 = getDB();
+    if (d0.sessions.some((x) => !x.closed && x.courtId === booking.courtId)) {
+      throw new Error("Il campo ha già una sessione attiva");
+    }
+    const court = d0.courts.find((c) => c.id === booking.courtId);
+    const minutes = Math.max(30, toMin(booking.end) - toMin(booking.start));
+    const total = booking.price > 0 ? booking.price : round((court?.hourlyPrice ?? 0) * (minutes / 60));
+    const names = booking.players.length ? booking.players : ["", "", "", ""];
+    courtSessions.start({
+      courtId: booking.courtId,
+      pricingMode: "giocatore",
+      total,
+      durationMin: minutes,
+      playerNames: names,
+      bookingId: booking.id,
+    });
+  },
   start(input: {
     courtId: string;
     pricingMode: "campo" | "giocatore";
     total: number;
     durationMin: number;
     playerNames: string[];
+    bookingId?: string;
   }) {
     set((d) => {
       const players: Player[] = input.playerNames.map((n, i) => ({
@@ -371,6 +391,7 @@ export const courtSessions = {
         total: input.total,
         players,
         closed: false,
+        ...(input.bookingId ? { bookingId: input.bookingId } : {}),
       };
       d.sessions = [...d.sessions, s];
     });
@@ -783,3 +804,4 @@ export const series = {
     return ids.size;
   },
 };
+
