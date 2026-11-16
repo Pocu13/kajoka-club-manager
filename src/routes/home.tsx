@@ -28,9 +28,6 @@ import { bookingAt, currentBlock, dateKey, minutesNow, nextBooking, toMin } from
 import { eur, fmtTime } from "@/lib/format";
 import type { Booking, Court, Session } from "@/lib/types";
 import { cn } from "@/lib/utils";
-import mapImage from "@/assets/club-map.jpg";
-import mapDayAsset from "@/assets/mappa_diurna.png.asset.json";
-import mapAfternoonAsset from "@/assets/mappa_pomeriggio.png.asset.json";
 
 // Rapporto della mappa mostrata nello screenshot.
 // Rimane costante per evitare spostamenti delle card durante il resize.
@@ -217,10 +214,19 @@ function HomePage() {
 
   const activeMap =
     romeHour < 12
-      ? { src: mapDayAsset.url, alt: "Vista aerea diurna del circolo" }
+      ? {
+          src: "/images/mappa_diurna.png",
+          alt: "Vista aerea diurna del circolo",
+        }
       : romeHour < 18
-        ? { src: mapAfternoonAsset.url, alt: "Vista aerea pomeridiana del circolo" }
-        : { src: mapImage, alt: "Vista aerea serale del circolo" };
+        ? {
+            src: "/images/mappa_pomeriggio.png",
+            alt: "Vista aerea pomeridiana del circolo",
+          }
+        : {
+            src: "/images/mappa_notturna.png",
+            alt: "Vista aerea notturna del circolo",
+          };
 
   const sessionByCourt = useMemo(() => {
     const sessions = new Map<string, Session>();
