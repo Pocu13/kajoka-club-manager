@@ -12,6 +12,8 @@ import {
   Users2,
 } from "lucide-react";
 import { AppShell } from "@/components/app-shell";
+import { WhatsAppShare } from "@/components/whatsapp-share";
+import { sessionSummary } from "@/lib/whatsapp";
 import {
   Badge,
   Btn,
@@ -778,6 +780,8 @@ function SessionDrawer({
                 </span>
               </div>
             </Panel>
+
+            <WhatsAppShare title="Invia riepilogo conto su WhatsApp" text={sessionSummary(session, court.name)} />
 
             <div>
               <div className="mb-2 flex items-center justify-between">

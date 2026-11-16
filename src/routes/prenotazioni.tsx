@@ -5,6 +5,8 @@ import { CalendarPlus, ChevronLeft, ChevronRight, Clock, Euro, Loader2, Pencil, 
 import { useServerFn } from "@tanstack/react-start";
 import { parseBookingRequest } from "@/lib/ai-booking.functions";
 import { AppShell } from "@/components/app-shell";
+import { WhatsAppShare } from "@/components/whatsapp-share";
+import { bookingMessage } from "@/lib/whatsapp";
 import { Badge, Btn, Drawer, Field, Input, Modal, Panel, Select } from "@/components/ui-kit";
 import { reservations, series, useCurrentUser, useDB, type SeriesScope } from "@/lib/store";
 import { eur } from "@/lib/format";
@@ -804,6 +806,10 @@ function BookingDetail({
             <Row label="Totale" value={eur(booking.price)} />
             <Row label="Creata da" value={booking.createdBy} />
           </Panel>
+
+          {!booking.cancelled && booking.kind !== "manutenzione" && (
+            <WhatsAppShare title="Condividi su WhatsApp" text={bookingMessage(booking, court?.name ?? "Campo")} />
+          )}
 
           <div>
             <div className="label-caps mb-2 text-muted-foreground">Giocatori</div>
