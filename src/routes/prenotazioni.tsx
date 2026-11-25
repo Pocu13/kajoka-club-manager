@@ -1,4 +1,3 @@
-
 import { createFileRoute } from "@tanstack/react-router";
 import { useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
@@ -30,6 +29,7 @@ import {
   type FamilyKey,
 } from "@/lib/bookings";
 import type { Booking, BookingKind, Player, RecurrenceFreq } from "@/lib/types";
+import { cn } from "@/lib/utils";
 
 export type FormInit = {
   courtId: string;
@@ -41,7 +41,6 @@ export type FormInit = {
   note?: string;
   source?: "ai";
 };
-import { cn } from "@/lib/utils";
 
 const PPM = 1.7;
 const TRACK = (OPEN_TO - OPEN_FROM) * PPM;
@@ -821,10 +820,12 @@ function BookingDetail({
     setEDur(toMin(booking.end) - toMin(booking.start));
     setECourt(booking.courtId);
 
-    const isPadel = db.courts.find((c) => c.id === booking.courtId)?.type === "padel";
+    const courtType = db.courts.find((c) => c.id === booking.courtId)?.type;
+    const isPadel = courtType === "padel";
+    const maxParticipants = courtType === "beach" ? 12 : 4;
     const count = isPadel
       ? 4
-      : Math.max(2, Math.min(4, booking.participants?.length || booking.players.length || 2));
+      : Math.max(2, Math.min(maxParticipants, booking.participants?.length || booking.players.length || 2));
 
     const initialPlayers: Player[] = Array.from({ length: count }, (_, index) => {
       const existing = booking.participants?.[index];
@@ -869,7 +870,7 @@ function BookingDetail({
 
   const court = db.courts.find((c) => c.id === booking.courtId);
   const fixedParticipants = court?.type === "padel";
-  const participantLimit = 4;
+  const participantLimit = court?.type === "beach" ? 12 : 4;
 
   const selectedPlayers = participants.filter(
     (player) => payIds.includes(player.id) && !player.paid,
@@ -1156,7 +1157,9 @@ function BookingDetail({
             <p className="mt-2 text-xs text-muted-foreground">
               {court?.type === "padel"
                 ? "Padel: 4 partecipanti obbligatori."
-                : "Tennis e Beach: da 2 a 4 partecipanti."}{" "}
+                : court?.type === "beach"
+                  ? "Beach: da 2 a 12 partecipanti."
+                  : "Tennis: da 2 a 4 partecipanti."}{" "}
               Quota campo ripartita tra i partecipanti.
             </p>
 
