@@ -157,6 +157,44 @@ function nextTxId(db: DB, kind: "bar" | "campo") {
   return prefix + String(n).padStart(5, "0");
 }
 
+/**
+ * Crea i dati iniziali dei partecipanti quando una prenotazione
+ * non ha ancora una lista operativa salvata.
+ */
+function createBookingParticipants(booking: Booking, total: number): Player[] {
+  const court = load().courts.find((c) => c.id === booking.courtId);
+
+  const defaultCount =
+    court?.type === "padel"
+      ? 4
+      : 2;
+
+  const names = booking.players.length
+    ? booking.players.slice(0, 4)
+    : Array.from({ length: defaultCount }, () => "");
+
+  const count = Math.max(defaultCount, names.length);
+  const baseQuota = round(total / count);
+  let assigned = 0;
+
+  return Array.from({ length: count }, (_, index) => {
+    const quota =
+      index === count - 1
+        ? round(total - assigned)
+        : baseQuota;
+
+    assigned = round(assigned + quota);
+
+    return {
+      id: `g${index + 1}`,
+      name: names[index]?.trim() || `Giocatore ${index + 1}`,
+      quota,
+      paid: false,
+      extras: [],
+    };
+  });
+}
+
 /* ---------------------------------- auth --------------------------------- */
 
 export const auth = {
@@ -304,6 +342,7 @@ export const sales = {
     label?: string;
     courtId?: string;
     sessionId?: string;
+    bookingId?: string;
     playerName?: string;
     note?: string;
     decrementStock?: boolean;
@@ -331,6 +370,7 @@ export const sales = {
         operatorName: op.name,
         courtId: input.courtId,
         sessionId: input.sessionId,
+        bookingId: input.bookingId,
         playerName: input.playerName,
         note: input.note ?? "",
         cancelled: false,
@@ -387,25 +427,94 @@ export const sales = {
 /* -------------------------------- sessions -------------------------------- */
 
 export const courtSessions = {
-  /** Check-in con un click: avvia la sessione dai dati della prenotazione. */
+  /**
+   * Avvia la sessione dalla prenotazione.
+   * Mantiene partecipanti, quote, extra e pagamenti già registrati.
+   * Le transazioni anticipate vengono collegate anche alla sessione.
+   */
   checkIn(booking: Booking) {
     const d0 = getDB();
+
+    const existingSession = d0.sessions.find(
+      (x) => !x.closed && x.courtId === booking.courtId && x.bookingId === booking.id,
+    );
+
+    if (existingSession) return existingSession.id;
+
     if (d0.sessions.some((x) => !x.closed && x.courtId === booking.courtId)) {
       throw new Error("Il campo ha già una sessione attiva");
     }
+
     const court = d0.courts.find((c) => c.id === booking.courtId);
     const minutes = Math.max(30, toMin(booking.end) - toMin(booking.start));
-    const total = booking.price > 0 ? booking.price : round((court?.hourlyPrice ?? 0) * (minutes / 60));
-    const names = booking.players.length ? booking.players : ["", "", "", ""];
-    courtSessions.start({
+    const total =
+      booking.price > 0
+        ? booking.price
+        : round((court?.hourlyPrice ?? 0) * (minutes / 60));
+
+    const participants =
+      booking.participants?.length
+        ? booking.participants.map((p) => ({
+            ...p,
+            extras: [...(p.extras ?? [])],
+          }))
+        : createBookingParticipants(booking, total);
+
+    const sessionId = nid("s");
+
+    const session: Session = {
+      id: sessionId,
       courtId: booking.courtId,
+      startedAt: new Date().toISOString(),
+      durationMin: minutes,
       pricingMode: "giocatore",
       total,
-      durationMin: minutes,
-      playerNames: names,
+      players: participants,
+      closed: false,
       bookingId: booking.id,
+    };
+
+    set((d) => {
+      // Evita di creare due sessioni per la stessa prenotazione.
+      const alreadyStarted = d.sessions.some(
+        (x) => !x.closed && x.courtId === booking.courtId,
+      );
+
+      if (alreadyStarted) return;
+
+      d.sessions = [...d.sessions, session];
+
+      // Le transazioni anticipate restano nella contabilità originale,
+      // ma da questo momento sono collegate anche alla sessione.
+      d.transactions = d.transactions.map((tx) =>
+        tx.bookingId === booking.id && !tx.cancelled
+          ? { ...tx, sessionId }
+          : tx,
+      );
+
+      // Salva i partecipanti inizializzati anche nella prenotazione.
+      d.bookings = d.bookings.map((b) =>
+        b.id === booking.id
+          ? {
+              ...b,
+              participants,
+              players: participants.map((p) => p.name),
+            }
+          : b,
+      );
     });
+
+    const fresh = getDB().sessions.find(
+      (x) => !x.closed && x.bookingId === booking.id,
+    );
+
+    if (!fresh) {
+      throw new Error("Impossibile avviare la sessione: il campo risulta già occupato");
+    }
+
+    return fresh.id;
   },
+
   start(input: {
     courtId: string;
     pricingMode: "campo" | "giocatore";
@@ -413,15 +522,25 @@ export const courtSessions = {
     durationMin: number;
     playerNames: string[];
     bookingId?: string;
+    players?: Player[];
   }) {
+    let sessionId = "";
+
     set((d) => {
-      const players: Player[] = input.playerNames.map((n, i) => ({
-        id: `g${i + 1}`,
-        name: n.trim() || `Giocatore ${i + 1}`,
-        quota: round(input.total / Math.max(1, input.playerNames.length)),
-        paid: false,
-        extras: [],
-      }));
+      const players: Player[] =
+        input.players?.length
+          ? input.players.map((p) => ({
+              ...p,
+              extras: [...(p.extras ?? [])],
+            }))
+          : input.playerNames.map((n, i) => ({
+              id: `g${i + 1}`,
+              name: n.trim() || `Giocatore ${i + 1}`,
+              quota: round(input.total / Math.max(1, input.playerNames.length)),
+              paid: false,
+              extras: [],
+            }));
+
       const s: Session = {
         id: nid("s"),
         courtId: input.courtId,
@@ -433,9 +552,14 @@ export const courtSessions = {
         closed: false,
         ...(input.bookingId ? { bookingId: input.bookingId } : {}),
       };
+
+      sessionId = s.id;
       d.sessions = [...d.sessions, s];
     });
+
+    return sessionId;
   },
+
   updateQuotas(sessionId: string, quotas: Record<string, number>) {
     set((d) => {
       d.sessions = d.sessions.map((s) =>
@@ -451,10 +575,12 @@ export const courtSessions = {
       );
     });
   },
+
   addExtra(sessionId: string, playerId: string, productId: string) {
     set((d) => {
       const p = d.products.find((x) => x.id === productId);
       if (!p) return;
+
       d.sessions = d.sessions.map((s) =>
         s.id === sessionId
           ? {
@@ -477,6 +603,7 @@ export const courtSessions = {
             }
           : s,
       );
+
       const fresh = d.products.find((x) => x.id === productId)!;
       pushMovement(
         d,
@@ -489,6 +616,7 @@ export const courtSessions = {
       );
     });
   },
+
   removeExtra(sessionId: string, playerId: string, productId: string) {
     set((d) => {
       d.sessions = d.sessions.map((s) =>
@@ -505,6 +633,148 @@ export const courtSessions = {
       );
     });
   },
+
+  /**
+   * Registra un pagamento anticipato direttamente sulla prenotazione.
+   * Il partecipante viene marcato come pagato e la transazione conserva
+   * il riferimento alla prenotazione fino alla creazione della sessione.
+   */
+  payBookingPlayers(
+    bookingId: string,
+    playerIds: string[],
+    method: PaymentMethod,
+    cash: number,
+    card: number,
+  ): { ok: boolean; error?: string } {
+    const db = getDB();
+    const booking = db.bookings.find((b) => b.id === bookingId);
+
+    if (!booking) return { ok: false, error: "Prenotazione non trovata" };
+
+    const participants = booking.participants ?? [];
+
+    if (!participants.length) {
+      return {
+        ok: false,
+        error: "Prima di registrare il pagamento devi inserire i partecipanti.",
+      };
+    }
+
+    const targets = participants.filter(
+      (p) => playerIds.includes(p.id) && !p.paid,
+    );
+
+    if (!targets.length) {
+      return { ok: false, error: "I partecipanti selezionati hanno già saldato." };
+    }
+
+    const items: TxItem[] = targets.flatMap((p) =>
+      p.extras.map((e) => ({
+        productId: e.productId,
+        name: e.name,
+        qty: e.qty,
+        price: e.price,
+        cost: e.cost,
+      })),
+    );
+
+    const quotaTotal = round(targets.reduce((sum, p) => sum + p.quota, 0));
+    const extraTotal = round(items.reduce((sum, i) => sum + i.price * i.qty, 0));
+    const amount = round(quotaTotal + extraTotal);
+
+    if (amount <= 0) {
+      return { ok: false, error: "L'importo da pagare deve essere maggiore di zero." };
+    }
+
+    if (method === "misto" && (cash < 0 || card < 0 || round(cash + card) !== amount)) {
+      return {
+        ok: false,
+        error: "La somma di contanti e carta deve corrispondere al totale da pagare.",
+      };
+    }
+
+    const court = db.courts.find((c) => c.id === booking.courtId);
+
+    set((d) => {
+      const currentBooking = d.bookings.find((b) => b.id === bookingId);
+      if (!currentBooking) return;
+
+      const currentParticipants = currentBooking.participants ?? [];
+      const currentTargets = currentParticipants.filter(
+        (p) => playerIds.includes(p.id) && !p.paid,
+      );
+
+      if (!currentTargets.length) return;
+
+      const currentItems: TxItem[] = currentTargets.flatMap((p) =>
+        p.extras.map((e) => ({
+          productId: e.productId,
+          name: e.name,
+          qty: e.qty,
+          price: e.price,
+          cost: e.cost,
+        })),
+      );
+
+      const currentQuota = round(
+        currentTargets.reduce((sum, p) => sum + p.quota, 0),
+      );
+      const currentExtras = round(
+        currentItems.reduce((sum, i) => sum + i.price * i.qty, 0),
+      );
+      const currentAmount = round(currentQuota + currentExtras);
+
+      const op = currentOperator(d);
+      const id = nextTxId(d, "campo");
+
+      const tx: Transaction = {
+        id,
+        ts: new Date().toISOString(),
+        kind: "campo",
+        label: `${court?.name ?? "Campo"} · ${currentTargets.map((p) => p.name).join(", ")}`,
+        items: currentItems,
+        subtotal: currentAmount,
+        discount: 0,
+        amount: currentAmount,
+        method,
+        cash:
+          method === "misto"
+            ? cash
+            : method === "contanti"
+              ? currentAmount
+              : 0,
+        card:
+          method === "misto"
+            ? card
+            : method === "carta"
+              ? currentAmount
+              : 0,
+        operatorId: op.id,
+        operatorName: op.name,
+        courtId: currentBooking.courtId,
+        bookingId,
+        playerName: currentTargets.map((p) => p.name).join(", "),
+        note: "Pagamento anticipato quota campo ed extra.",
+        cancelled: false,
+      };
+
+      d.transactions = [tx, ...d.transactions];
+
+      d.bookings = d.bookings.map((b) =>
+        b.id === bookingId
+          ? {
+              ...b,
+              participants: currentParticipants.map((p) =>
+                playerIds.includes(p.id) ? { ...p, paid: true } : p,
+              ),
+            }
+          : b,
+      );
+    });
+
+    return { ok: true };
+  },
+
   payPlayers(
     sessionId: string,
     playerIds: string[],
@@ -515,9 +785,11 @@ export const courtSessions = {
     set((d) => {
       const s = d.sessions.find((x) => x.id === sessionId);
       if (!s) return;
+
       const court = d.courts.find((c) => c.id === s.courtId);
       const targets = s.players.filter((p) => playerIds.includes(p.id) && !p.paid);
       if (!targets.length) return;
+
       const items: TxItem[] = targets.flatMap((p) =>
         p.extras.map((e) => ({
           productId: e.productId,
@@ -527,11 +799,13 @@ export const courtSessions = {
           cost: e.cost,
         })),
       );
+
       const quotaTotal = round(targets.reduce((sum, p) => sum + p.quota, 0));
       const extraTotal = round(items.reduce((sum, i) => sum + i.price * i.qty, 0));
       const amount = round(quotaTotal + extraTotal);
       const op = currentOperator(d);
       const id = nextTxId(d, "campo");
+
       d.transactions = [
         {
           id,
@@ -549,12 +823,14 @@ export const courtSessions = {
           operatorName: op.name,
           courtId: s.courtId,
           sessionId: s.id,
+          bookingId: s.bookingId,
           playerName: targets.map((t) => t.name).join(", "),
           note: "Saldo quota campo ed extra.",
           cancelled: false,
         },
         ...d.transactions,
       ];
+
       d.sessions = d.sessions.map((x) =>
         x.id === sessionId
           ? {
@@ -567,6 +843,7 @@ export const courtSessions = {
       );
     });
   },
+
   close(sessionId: string) {
     set((d) => {
       d.sessions = d.sessions.filter((s) => s.id !== sessionId);
@@ -722,7 +999,11 @@ export interface OccurrencePreview {
   conflict: Booking | null;
 }
 
-function findConflict(db: DB, d: { courtId: string; date: string; start: string; end: string }, ignore: Set<string>) {
+function findConflict(
+  db: DB,
+  d: { courtId: string; date: string; start: string; end: string },
+  ignore: Set<string>,
+) {
   const s = toMin(d.start);
   const e = toMin(d.end);
   return (
@@ -737,7 +1018,13 @@ function findConflict(db: DB, d: { courtId: string; date: string; start: string;
   );
 }
 
-function scopeMembers(db: DB, seriesId: string, scope: SeriesScope, fromDate: string, id?: string) {
+function scopeMembers(
+  db: DB,
+  seriesId: string,
+  scope: SeriesScope,
+  fromDate: string,
+  id?: string,
+) {
   return db.bookings.filter(
     (b) =>
       b.seriesId === seriesId &&
@@ -754,6 +1041,7 @@ export const series = {
       conflict: findConflict(db, { ...draft, date }, new Set()),
     }));
   },
+
   /** Crea tutti i blocchi in modo atomico. Con skipConflicts le date occupate vengono aggiunte alle eccezioni. */
   create(
     draft: BookingDraft,
@@ -762,22 +1050,32 @@ export const series = {
   ): { ok: boolean; error?: string; created?: number; skipped?: string[] } {
     if (toMin(draft.end) <= toMin(draft.start))
       return { ok: false, error: "L'orario di fine deve seguire quello di inizio" };
-    if (rule.until < draft.date) return { ok: false, error: "La data di fine precede la data di inizio" };
+    if (rule.until < draft.date)
+      return { ok: false, error: "La data di fine precede la data di inizio" };
+
     const prev = series.preview(draft, rule);
-    if (!prev.length) return { ok: false, error: "Nessuna data generata dalla regola" };
+    if (!prev.length)
+      return { ok: false, error: "Nessuna data generata dalla regola" };
+
     const conflicts = prev.filter((p) => p.conflict);
     if (conflicts.length && !skipConflicts)
       return {
         ok: false,
         error: `${conflicts.length} date in conflitto: ${conflicts.map((c) => c.date).join(", ")}`,
       };
+
     const skipped = conflicts.map((c) => c.date);
-    const finalRule = { ...rule, exceptions: [...new Set([...rule.exceptions, ...skipped])] };
+    const finalRule = {
+      ...rule,
+      exceptions: [...new Set([...rule.exceptions, ...skipped])],
+    };
     const seriesId = nid("s");
     const free = prev.filter((p) => !p.conflict);
+
     set((d) => {
       const op = currentOperator(d);
       const now = new Date().toISOString();
+
       d.bookings = [
         ...d.bookings,
         ...free.map((p) => ({
@@ -792,55 +1090,79 @@ export const series = {
         })),
       ];
     });
+
     return { ok: true, created: free.length, skipped };
   },
+
   /** Modifica uno, i futuri o tutti i blocchi. Fallisce senza modifiche se anche un solo blocco va in conflitto. */
   update(
     id: string,
-    patch: Partial<Pick<Booking, "courtId" | "start" | "end" | "kind" | "title" | "players" | "note" | "price">>,
+    patch: Partial<
+      Pick<Booking, "courtId" | "start" | "end" | "kind" | "title" | "players" | "note" | "price">
+    >,
     scope: SeriesScope,
   ): { ok: boolean; error?: string; updated?: number } {
     const db = load();
     const base = db.bookings.find((b) => b.id === id);
     if (!base) return { ok: false, error: "Prenotazione non trovata" };
-    const members = base.seriesId ? scopeMembers(db, base.seriesId, scope, base.date, id) : [base];
+
+    const members = base.seriesId
+      ? scopeMembers(db, base.seriesId, scope, base.date, id)
+      : [base];
+
     const ignore = new Set(members.map((m) => m.id));
     const next = members.map((m) => ({ ...m, ...patch }));
+
     if (next.some((n) => toMin(n.end) <= toMin(n.start)))
       return { ok: false, error: "L'orario di fine deve seguire quello di inizio" };
+
     const clashes = next.filter((n) => findConflict(db, n, ignore));
+
     if (clashes.length)
       return {
         ok: false,
         error: `Conflitto su ${clashes.length} blocchi: ${clashes.map((c) => c.date).join(", ")}`,
       };
+
     const map = new Map(next.map((n) => [n.id, n]));
+
     set((d) => {
       d.bookings = d.bookings.map((b) => map.get(b.id) ?? b);
     });
+
     return { ok: true, updated: next.length };
   },
+
   /** Annulla blocchi: "this" aggiunge anche l'eccezione alla regola. */
   cancel(id: string, scope: SeriesScope): number {
     const db = load();
     const base = db.bookings.find((b) => b.id === id);
     if (!base) return 0;
-    const members = base.seriesId ? scopeMembers(db, base.seriesId, scope, base.date, id) : [base];
+
+    const members = base.seriesId
+      ? scopeMembers(db, base.seriesId, scope, base.date, id)
+      : [base];
+
     const ids = new Set(members.map((m) => m.id));
+
     set((d) => {
       d.bookings = d.bookings.map((b) => {
         if (ids.has(b.id)) return { ...b, cancelled: true };
+
         if (base.seriesId && b.seriesId === base.seriesId && b.recurrence) {
           const exc = new Set(b.recurrence.exceptions);
           members.forEach((m) => exc.add(m.date));
+
           return {
             ...b,
             recurrence: { ...b.recurrence, exceptions: [...exc].sort() },
           };
         }
+
         return b;
       });
     });
+
     return ids.size;
   },
 };
