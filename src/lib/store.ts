@@ -333,6 +333,7 @@ export const catalog = {
 
 export const sales = {
   
+ 
   record(input: {
     items: TxItem[];
     discount: number;
@@ -354,41 +355,43 @@ export const sales = {
       const kind = input.kind ?? "bar";
       const isGift = input.method === "omaggio";
 
-      if (isGift) {
-        id = nid("OM");
-      } else {
-        const subtotal = round(
-          input.items.reduce((s, i) => s + i.price * i.qty, 0),
-        );
-        const amount = round(subtotal - input.discount);
-        const op = currentOperator(d);
+      const subtotal = round(
+        input.items.reduce((s, i) => s + i.price * i.qty, 0),
+      );
 
-        id = nextTxId(d, kind);
+      const discount = isGift ? subtotal : input.discount;
+      const amount = isGift ? 0 : round(subtotal - discount);
+      const op = currentOperator(d);
 
-        const tx: Transaction = {
-          id,
-          ts: new Date().toISOString(),
-          kind,
-          label: input.label ?? "Vendita POS",
-          items: input.items,
-          subtotal,
-          discount: input.discount,
-          amount,
-          method: input.method,
-          cash: input.cash,
-          card: input.card,
-          operatorId: op.id,
-          operatorName: op.name,
-          courtId: input.courtId,
-          sessionId: input.sessionId,
-          bookingId: input.bookingId,
-          playerName: input.playerName,
-          note: input.note ?? "",
-          cancelled: false,
-        };
+      id = nextTxId(d, kind);
 
-        d.transactions = [tx, ...d.transactions];
-      }
+      const tx: Transaction = {
+        id,
+        ts: new Date().toISOString(),
+        kind,
+        label: input.label ?? "Vendita POS",
+        items: input.items,
+        subtotal,
+        discount,
+        amount,
+        method: input.method,
+        cash: isGift ? 0 : input.cash,
+        card: isGift ? 0 : input.card,
+        operatorId: op.id,
+        operatorName: op.name,
+        courtId: input.courtId,
+        sessionId: input.sessionId,
+        bookingId: input.bookingId,
+        playerName: input.playerName,
+        note: isGift
+          ? [input.note, "Operazione omaggio: nessun incasso registrato."]
+              .filter(Boolean)
+              .join(" ")
+          : input.note ?? "",
+        cancelled: false,
+      };
+
+      d.transactions = [tx, ...d.transactions];
 
       if (input.decrementStock !== false) {
         for (const it of input.items) {
