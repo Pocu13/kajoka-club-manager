@@ -72,7 +72,7 @@ function StatsPage() {
   const [tab, setTab] = useState<Tab>("panoramica");
   const [period, setPeriod] = useState<Period>("7");
 
-  const data = useMemo(() => {
+    const data = useMemo(() => {
     const now = new Date();
     let from: number;
     if (period === "oggi") from = new Date(now).setHours(0, 0, 0, 0);
@@ -80,31 +80,45 @@ function StatsPage() {
     else if (period === "30") from = Date.now() - 30 * 864e5;
     else from = new Date(now.getFullYear(), now.getMonth(), 1).getTime();
 
+    // Tutte le operazioni, compresi gli omaggi.
     const tx = db.transactions.filter(
       (t) => !t.cancelled && new Date(t.ts).getTime() >= from,
     );
-    const bar = tx.filter((t) => t.kind === "bar");
-    const campi = tx.filter((t) => t.kind === "campo");
-    const revenue = tx.reduce((s, t) => s + t.amount, 0);
-    const cost = tx.reduce(
+
+    // Le statistiche economiche considerano soltanto le operazioni pagate.
+    const paidTx = tx.filter((t) => t.method !== "omaggio");
+
+    const bar = paidTx.filter((t) => t.kind === "bar");
+    const campi = paidTx.filter((t) => t.kind === "campo");
+
+    const revenue = paidTx.reduce((s, t) => s + t.amount, 0);
+    const cost = paidTx.reduce(
       (s, t) => s + t.items.reduce((c, i) => c + i.cost * i.qty, 0),
       0,
     );
 
     const days: { label: string; bar: number; campi: number; totale: number }[] = [];
     const span = period === "oggi" ? 1 : period === "7" ? 7 : 30;
+
     for (let i = span - 1; i >= 0; i--) {
       const d = new Date();
       d.setDate(d.getDate() - i);
       const key = d.toDateString();
-      const dayTx = tx.filter((t) => new Date(t.ts).toDateString() === key);
+      const dayTx = paidTx.filter(
+        (t) => new Date(t.ts).toDateString() === key,
+      );
+
       days.push({
         label: `${d.getDate()}/${d.getMonth() + 1}`,
         bar: Math.round(
-          dayTx.filter((t) => t.kind === "bar").reduce((s, t) => s + t.amount, 0),
+          dayTx
+            .filter((t) => t.kind === "bar")
+            .reduce((s, t) => s + t.amount, 0),
         ),
         campi: Math.round(
-          dayTx.filter((t) => t.kind === "campo").reduce((s, t) => s + t.amount, 0),
+          dayTx
+            .filter((t) => t.kind === "campo")
+            .reduce((s, t) => s + t.amount, 0),
         ),
         totale: Math.round(dayTx.reduce((s, t) => s + t.amount, 0)),
       });
@@ -114,7 +128,8 @@ function StatsPage() {
       string,
       { name: string; qty: number; revenue: number; margin: number }
     >();
-    for (const t of tx)
+
+    for (const t of paidTx) {
       for (const i of t.items) {
         const e = byProduct.get(i.productId) ?? {
           name: i.name,
@@ -122,15 +137,21 @@ function StatsPage() {
           revenue: 0,
           margin: 0,
         };
+
         e.qty += i.qty;
         e.revenue += i.price * i.qty;
         e.margin += (i.price - i.cost) * i.qty;
         byProduct.set(i.productId, e);
       }
-    const products = [...byProduct.values()].sort((a, b) => b.revenue - a.revenue);
+    }
+
+    const products = [...byProduct.values()].sort(
+      (a, b) => b.revenue - a.revenue,
+    );
 
     const byCourt = db.courts.map((c) => {
       const list = campi.filter((t) => t.courtId === c.id);
+
       return {
         name: c.name,
         type: c.type,
@@ -138,26 +159,38 @@ function StatsPage() {
         sessions: list.length,
       };
     });
+
     const maxCourt = Math.max(1, ...byCourt.map((c) => c.sessions));
 
-    const methods = (["contanti", "carta", "misto", "omaggio"] as const).map((m) => ({
-      name: m[0]!.toUpperCase() + m.slice(1),
-      value: Math.round(
-        tx.filter((t) => t.method === m).reduce((s, t) => s + t.amount, 0),
-      ),
-      count: tx.filter((t) => t.method === m).length,
-    }));
+    // I metodi includono anche gli omaggi, che hanno importo zero.
+    const methods = (["contanti", "carta", "misto", "omaggio"] as const).map(
+      (m) => ({
+        name: m[0]!.toUpperCase() + m.slice(1),
+        value: Math.round(
+          tx
+            .filter((t) => t.method === m)
+            .reduce((s, t) => s + t.amount, 0),
+        ),
+        count: tx.filter((t) => t.method === m).length,
+      }),
+    );
 
     const byCategory = new Map<string, number>();
-    for (const t of bar)
+
+    for (const t of bar) {
       for (const i of t.items) {
         const p = db.products.find((x) => x.id === i.productId);
         const cat = p?.category ?? "Altro";
-        byCategory.set(cat, (byCategory.get(cat) ?? 0) + i.price * i.qty);
+        byCategory.set(
+          cat,
+          (byCategory.get(cat) ?? 0) + i.price * i.qty,
+        );
       }
+    }
 
     return {
       tx,
+      paidCount: paidTx.length,
       bar,
       campi,
       revenue,
@@ -173,7 +206,9 @@ function StatsPage() {
     };
   }, [db, period]);
 
-  const avgTicket = data.tx.length ? data.revenue / data.tx.length : 0;
+  const avgTicket = data.paidCount
+    ? data.revenue / data.paidCount
+    : 0;
   const margin = data.revenue - data.cost;
 
   return (
