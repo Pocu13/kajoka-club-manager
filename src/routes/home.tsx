@@ -5,6 +5,8 @@ import { toast } from "sonner";
 import {
   AlertTriangle,
   CalendarClock,
+  ChevronLeft,
+  ChevronRight,
   Plus,
   RefreshCw,
   Users2,
@@ -22,7 +24,17 @@ import {
   Select,
 } from "@/components/ui-kit";
 import { courtSessions, useDB } from "@/lib/store";
-import { bookingAt, currentBlock, dateKey, minutesNow, nextBooking, toMin } from "@/lib/bookings";
+import {
+  bookingAt,
+  currentBlock,
+  dateKey,
+  minutesNow,
+  nextBooking,
+  OPEN_FROM,
+  OPEN_TO,
+  toHHMM,
+  toMin,
+} from "@/lib/bookings";
 import { eur, fmtTime } from "@/lib/format";
 import type { Booking, Court, Session } from "@/lib/types";
 import { cn } from "@/lib/utils";
@@ -102,6 +114,8 @@ function HomePage() {
   const [now, setNow] = useState(() => new Date());
   const [pageHeight, setPageHeight] = useState<number | null>(null);
   const [mapSize, setMapSize] = useState({ width: 0, height: 0 });
+  const [selectedBlockStart, setSelectedBlockStart] = useState<number | null>(null);
+  const [blockMenuOpen, setBlockMenuOpen] = useState(false);
 
   const pageRef = useRef<HTMLDivElement>(null);
   const headerRef = useRef<HTMLDivElement>(null);
@@ -143,8 +157,6 @@ function HomePage() {
       const headerHeight = headerRef.current?.offsetHeight ?? 0;
       const footerHeight = footerRef.current?.offsetHeight ?? 0;
 
-      // Su finestre eccezionalmente basse resta possibile scorrere,
-      // senza sovrapporre o nascondere i comandi.
       const minimumHeight = headerHeight + footerHeight + 24 + 80;
       const availableHeight = Math.floor(viewportHeight - pageTop - 16);
 
@@ -225,48 +237,123 @@ function HomePage() {
             alt: "Vista aerea notturna del circolo",
           };
 
-  const sessionByCourt = useMemo(() => {
-    const sessions = new Map<string, Session>();
-
-    db.sessions
-      .filter((session) => !session.closed)
-      .forEach((session) => sessions.set(session.courtId, session));
-
-    return sessions;
-  }, [db.sessions]);
-
   const todayKey = dateKey(now);
   const currentMinute = minutesNow(now);
+
   const block = useMemo(
     () => currentBlock(db.bookings, todayKey, currentMinute),
     [db.bookings, todayKey, currentMinute],
   );
 
+  // I blocchi selezionabili seguono l'intervallo operativo configurato
+  // e includono anche gli orari di inizio delle prenotazioni.
+  const blockOptions = useMemo(() => {
+    const step = Math.max(15, db.settings.slotStep || 30);
+    const starts = new Set<number>();
+
+    for (let minute = OPEN_FROM; minute < OPEN_TO; minute += step) {
+      starts.add(minute);
+    }
+
+    starts.add(block.start);
+
+    db.bookings
+      .filter((booking) => !booking.cancelled && booking.date === todayKey)
+      .forEach((booking) => {
+        const start = toMin(booking.start);
+        if (start >= OPEN_FROM && start < OPEN_TO) starts.add(start);
+      });
+
+    return [...starts].sort((a, b) => a - b).map((start) => {
+      const startingBooking = db.bookings.find(
+        (booking) =>
+          !booking.cancelled &&
+          booking.date === todayKey &&
+          toMin(booking.start) === start,
+      );
+
+      const end = startingBooking
+        ? toMin(startingBooking.end)
+        : Math.min(OPEN_TO, start + step);
+
+      return {
+        start,
+        end,
+        label: toHHMM(start) + " – " + toHHMM(end),
+      };
+    });
+  }, [db.settings.slotStep, db.bookings, todayKey, block.start]);
+
+  const activeBlock =
+    (selectedBlockStart === null
+      ? null
+      : blockOptions.find((option) => option.start === selectedBlockStart)) ?? block;
+
+  const activeBlockIndex = blockOptions.findIndex(
+    (option) => option.start === activeBlock.start,
+  );
+
+  const moveBlock = (direction: -1 | 1) => {
+    const next = blockOptions[activeBlockIndex + direction];
+    if (!next) return;
+
+    setSelectedBlockStart(next.start);
+    setBlockMenuOpen(false);
+  };
+
+  const selectBlock = (value: string) => {
+    setSelectedBlockStart(Number(value));
+    setBlockMenuOpen(false);
+  };
+
+  // Mostra le sessioni soltanto nei blocchi temporali in cui sono effettivamente attive.
+  const sessionByCourt = useMemo(() => {
+    const sessions = new Map<string, Session>();
+
+    db.sessions.filter((session) => !session.closed).forEach((session) => {
+      const startedAt = new Date(session.startedAt);
+
+      if (dateKey(startedAt) !== todayKey) return;
+
+      const startMinute = minutesNow(startedAt);
+
+      if (
+        startMinute <= activeBlock.start &&
+        activeBlock.start < startMinute + session.durationMin
+      ) {
+        sessions.set(session.courtId, session);
+      }
+    });
+
+    return sessions;
+  }, [db.sessions, todayKey, activeBlock.start]);
+
   const bookingByCourt = useMemo(() => {
     const bookings = new Map<string, Booking>();
 
     db.courts.forEach((court) => {
-      const booking = bookingAt(db.bookings, court.id, todayKey, currentMinute);
+      const booking = bookingAt(db.bookings, court.id, todayKey, activeBlock.start);
       if (booking) bookings.set(court.id, booking);
     });
 
     return bookings;
-  }, [db.bookings, db.courts, todayKey, currentMinute]);
+  }, [db.bookings, db.courts, todayKey, activeBlock.start]);
 
   const nextBookingByCourt = useMemo(() => {
     const bookings = new Map<string, Booking>();
 
     db.courts.forEach((court) => {
-      const booking = nextBooking(db.bookings, court.id, todayKey, currentMinute);
+      const booking = nextBooking(db.bookings, court.id, todayKey, activeBlock.start);
       if (booking) bookings.set(court.id, booking);
     });
 
     return bookings;
-  }, [db.bookings, db.courts, todayKey, currentMinute]);
+  }, [db.bookings, db.courts, todayKey, activeBlock.start]);
 
   const occupied = db.courts.filter(
     (c) => sessionByCourt.has(c.id) || bookingByCourt.has(c.id),
   ).length;
+
   const free = db.courts.length - occupied;
   const today = new Date().toDateString();
 
@@ -298,24 +385,105 @@ function HomePage() {
           gridTemplateRows: "auto minmax(0, 1fr) auto",
         }}
       >
-        <div ref={headerRef} className="flex min-w-0 flex-wrap items-start justify-between gap-3">
+        <div
+          ref={headerRef}
+          className="flex min-w-0 flex-wrap items-start justify-between gap-3"
+        >
           <div className="min-w-0">
             <div className="flex flex-wrap items-center gap-2 sm:gap-3">
               <h1 className="text-xl font-bold uppercase sm:text-2xl xl:text-3xl">
                 Club Management
               </h1>
+
               <Badge tone="primary">
                 {occupied}/{db.courts.length} OCCUPATI
               </Badge>
+
               <Badge tone="success">
                 {free}/{db.courts.length} LIBERI
               </Badge>
-              <Link to="/prenotazioni">
-                <Badge tone="neutral" className="gap-1.5">
-                  <CalendarClock className="size-3" /> BLOCCO {block.label}
-                </Badge>
-              </Link>
+
+              {/* Navigazione blocchi */}
+              <div className="relative inline-flex items-center gap-1">
+                <Btn
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  className="h-7 w-8 px-0"
+                  aria-label="Blocco precedente"
+                  title="Blocco precedente"
+                  disabled={activeBlockIndex <= 0}
+                  onClick={() => moveBlock(-1)}
+                >
+                  <ChevronLeft className="size-4" />
+                </Btn>
+
+                <button
+                  type="button"
+                  aria-expanded={blockMenuOpen}
+                  aria-haspopup="listbox"
+                  onClick={() => setBlockMenuOpen((open) => !open)}
+                  className="rounded-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
+                >
+                  <Badge tone="neutral" className="gap-1.5 cursor-pointer py-1.5">
+                    <CalendarClock className="size-3" />
+                    BLOCCO {activeBlock.label}
+                  </Badge>
+                </button>
+
+                <Btn
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  className="h-7 w-8 px-0"
+                  aria-label="Blocco successivo"
+                  title="Blocco successivo"
+                  disabled={
+                    activeBlockIndex < 0 ||
+                    activeBlockIndex >= blockOptions.length - 1
+                  }
+                  onClick={() => moveBlock(1)}
+                >
+                  <ChevronRight className="size-4" />
+                </Btn>
+
+                {blockMenuOpen && (
+                  <div className="absolute left-1/2 top-full z-40 mt-2 w-64 -translate-x-1/2 rounded-xl border border-border bg-surface p-3 shadow-2xl">
+                    <label className="block space-y-1.5">
+                      <span className="label-caps text-muted-foreground">
+                        Seleziona blocco orario
+                      </span>
+
+                      <Select
+                        autoFocus
+                        value={String(activeBlock.start)}
+                        onChange={(event) => selectBlock(event.target.value)}
+                      >
+                        {blockOptions.map((option) => (
+                          <option key={option.start} value={option.start}>
+                            {option.label}
+                          </option>
+                        ))}
+                      </Select>
+                    </label>
+
+                    <Btn
+                      type="button"
+                      variant="subtle"
+                      size="sm"
+                      className="mt-2 w-full"
+                      onClick={() => {
+                        setSelectedBlockStart(null);
+                        setBlockMenuOpen(false);
+                      }}
+                    >
+                      Torna al blocco corrente
+                    </Btn>
+                  </div>
+                )}
+              </div>
             </div>
+
             <p className="mt-1 text-xs text-muted-foreground sm:text-sm">
               Controllo operativo del circolo — {db.courts.length} campi attivi
             </p>
@@ -330,10 +498,16 @@ function HomePage() {
                 { value: "2d", label: "2D" },
               ]}
             />
+
             <Btn variant="outline" size="sm" onClick={() => setNewOpen(true)}>
               <Plus className="size-4" /> Nuova sessione
             </Btn>
-            <Btn variant="outline" size="sm" onClick={() => toast.success("Mappa aggiornata")}>
+
+            <Btn
+              variant="outline"
+              size="sm"
+              onClick={() => toast.success("Mappa aggiornata")}
+            >
               <RefreshCw className="size-4" />
             </Btn>
           </div>
@@ -364,8 +538,12 @@ function HomePage() {
                   const activeSession = sessionByCourt.get(c.id);
                   const activeBooking = bookingByCourt.get(c.id);
                   const upcoming = nextBookingByCourt.get(c.id);
-                  const minsToNext = upcoming ? toMin(upcoming.start) - currentMinute : null;
+                  const minsToNext = upcoming
+                    ? toMin(upcoming.start) - activeBlock.start
+                    : null;
+
                   const position = getCourtPosition(c);
+
                   const status = activeSession
                     ? "IN CORSO"
                     : activeBooking
@@ -385,7 +563,11 @@ function HomePage() {
                         left: `${position.x}%`,
                         top: `${position.y}%`,
                         fontSize: cardFontSize,
-                        padding: tinyMap ? "4px 5px" : compactMap ? "5px 7px" : "7px 10px",
+                        padding: tinyMap
+                          ? "4px 5px"
+                          : compactMap
+                            ? "5px 7px"
+                            : "7px 10px",
                         gap: compactMap ? 4 : 7,
                         maxWidth: "24%",
                       }}
@@ -407,13 +589,17 @@ function HomePage() {
                         }}
                       />
 
-                      <span className="min-w-0 truncate font-bold uppercase">{c.name}</span>
+                      <span className="min-w-0 truncate font-bold uppercase">
+                        {c.name}
+                      </span>
 
                       {!compactMap && (
                         <span
                           className={cn(
                             "mono",
-                            activeSession || activeBooking ? "text-primary" : "text-success",
+                            activeSession || activeBooking
+                              ? "text-primary"
+                              : "text-success",
                           )}
                           style={{ fontSize: cardFontSize - 1 }}
                         >
@@ -448,18 +634,23 @@ function HomePage() {
                   >
                     <div className="flex flex-wrap items-center justify-between gap-2">
                       <span className="font-display text-xl font-bold">{c.name}</span>
+
                       <Badge tone={busy ? "primary" : "success"} dot>
                         {s ? "OCCUPATO" : activeBooking ? "PRENOTATO" : "LIBERO"}
                       </Badge>
                     </div>
+
                     <div className="label-caps mt-1 text-muted-foreground">{c.type}</div>
+
                     <div className="mono mt-4 text-sm">
                       {s ? (
                         <>
                           dalle {fmtTime(s.startedAt)} · {s.players.length} giocatori
                           <div className="mt-1 text-primary">
                             {eur(
-                              s.players.filter((p) => p.paid).reduce((sum, p) => sum + p.quota, 0),
+                              s.players
+                                .filter((p) => p.paid)
+                                .reduce((sum, p) => sum + p.quota, 0),
                             )}{" "}
                             / {eur(s.total)}
                           </div>
@@ -591,14 +782,23 @@ function NewSessionModal({
     if (booking) {
       const bookingDuration = Math.max(30, toMin(booking.end) - toMin(booking.start));
       const playerCount = Math.max(1, booking.players.length || 4);
+
       setDuration(String(bookingDuration));
       setCount(String(playerCount));
-      setNames(Array.from({ length: playerCount }, (_, index) => booking.players[index] ?? ""));
+      setNames(
+        Array.from(
+          { length: playerCount },
+          (_, index) => booking.players[index] ?? "",
+        ),
+      );
     }
   }, [open, preselect, booking]);
 
   const court = db.courts.find((c) => c.id === courtId);
-  const total = court ? Math.round(court.hourlyPrice * (Number(duration) / 60) * 100) / 100 : 0;
+
+  const total = court
+    ? Math.round(court.hourlyPrice * (Number(duration) / 60) * 100) / 100
+    : 0;
 
   return (
     <Modal
@@ -610,6 +810,7 @@ function NewSessionModal({
           <Btn variant="subtle" onClick={onClose}>
             Annulla
           </Btn>
+
           <Btn
             variant="primary"
             disabled={!courtId}
@@ -636,7 +837,10 @@ function NewSessionModal({
       <div className="space-y-4">
         <Field label="Campo">
           <Select value={courtId} onChange={(e) => setCourtId(e.target.value)}>
-            {freeCourts.length === 0 && <option value="">Nessun campo libero</option>}
+            {freeCourts.length === 0 && (
+              <option value="">Nessun campo libero</option>
+            )}
+
             {freeCourts.map((c) => (
               <option key={c.id} value={c.id}>
                 {c.name} — {eur(c.hourlyPrice)}/ora
@@ -651,11 +855,13 @@ function NewSessionModal({
               <option value="60">60</option>
               <option value="90">90</option>
               <option value="120">120</option>
+
               {booking && ![60, 90, 120].includes(Number(duration)) && (
                 <option value={duration}>{duration}</option>
               )}
             </Select>
           </Field>
+
           <Field label="Giocatori">
             <Select
               value={count}
@@ -693,6 +899,7 @@ function NewSessionModal({
 
         <div className="space-y-2">
           <span className="label-caps text-muted-foreground">Giocatori</span>
+
           {Array.from({ length: Number(count) || 4 }).map((_, index) => (
             <Input
               key={index}
