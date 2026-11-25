@@ -136,12 +136,11 @@ function BookingsPage() {
 
   const openBooking = (booking: Booking) => {
     const todayKey = dateKey(new Date());
-    const isCurrentBooking =
+    const isStartedBooking =
       booking.date === todayKey &&
-      minutesNow() >= toMin(booking.start) &&
-      minutesNow() < toMin(booking.end);
+      minutesNow() >= toMin(booking.start);
 
-    if (isCurrentBooking && booking.kind !== "manutenzione") {
+    if (isStartedBooking && booking.kind !== "manutenzione") {
       try {
         courtSessions.checkIn(booking);
         setDetail(null);
