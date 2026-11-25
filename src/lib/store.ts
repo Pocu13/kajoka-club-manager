@@ -332,6 +332,7 @@ export const catalog = {
 /* ------------------------------ transactions ------------------------------ */
 
 export const sales = {
+  
   record(input: {
     items: TxItem[];
     discount: number;
@@ -348,53 +349,75 @@ export const sales = {
     decrementStock?: boolean;
   }): string {
     let id = "";
+
     set((d) => {
-      const subtotal = round(input.items.reduce((s, i) => s + i.price * i.qty, 0));
-      const amount = round(subtotal - input.discount);
-      const op = currentOperator(d);
       const kind = input.kind ?? "bar";
-      id = nextTxId(d, kind);
-      const tx: Transaction = {
-        id,
-        ts: new Date().toISOString(),
-        kind,
-        label: input.label ?? "Vendita POS",
-        items: input.items,
-        subtotal,
-        discount: input.discount,
-        amount,
-        method: input.method,
-        cash: input.cash,
-        card: input.card,
-        operatorId: op.id,
-        operatorName: op.name,
-        courtId: input.courtId,
-        sessionId: input.sessionId,
-        bookingId: input.bookingId,
-        playerName: input.playerName,
-        note: input.note ?? "",
-        cancelled: false,
-      };
-      d.transactions = [tx, ...d.transactions];
+      const isGift = input.method === "omaggio";
+
+      if (isGift) {
+        id = nid("OM");
+      } else {
+        const subtotal = round(
+          input.items.reduce((s, i) => s + i.price * i.qty, 0),
+        );
+        const amount = round(subtotal - input.discount);
+        const op = currentOperator(d);
+
+        id = nextTxId(d, kind);
+
+        const tx: Transaction = {
+          id,
+          ts: new Date().toISOString(),
+          kind,
+          label: input.label ?? "Vendita POS",
+          items: input.items,
+          subtotal,
+          discount: input.discount,
+          amount,
+          method: input.method,
+          cash: input.cash,
+          card: input.card,
+          operatorId: op.id,
+          operatorName: op.name,
+          courtId: input.courtId,
+          sessionId: input.sessionId,
+          bookingId: input.bookingId,
+          playerName: input.playerName,
+          note: input.note ?? "",
+          cancelled: false,
+        };
+
+        d.transactions = [tx, ...d.transactions];
+      }
+
       if (input.decrementStock !== false) {
         for (const it of input.items) {
           const p = d.products.find((x) => x.id === it.productId);
+
           if (p) {
             pushMovement(
               d,
               p,
               kind === "bar" ? "vendita_pos" : "prodotto_campo",
               -it.qty,
-              kind === "bar" ? "Cassa POS (Bar Centrale)" : "Campo · Extra giocatore",
+              isGift
+                ? "Cassa POS · Omaggio"
+                : kind === "bar"
+                  ? "Cassa POS (Bar Centrale)"
+                  : "Campo · Extra giocatore",
               id,
-              "Scarico automatico da vendita.",
+              isGift
+                ? "Scarico automatico per omaggio; nessun incasso registrato."
+                : "Scarico automatico da vendita.",
             );
           }
         }
       }
     });
+
     return id;
   },
+
   cancel(id: string, restoreStock: boolean, reason: string) {
     set((d) => {
       const tx = d.transactions.find((t) => t.id === id);
