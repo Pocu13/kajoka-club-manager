@@ -1,5 +1,6 @@
+
 import { useSyncExternalStore } from "react";
-import { buildBookings, buildSeed, DEFAULT_SETTINGS } from "./seed";
+import { buildSeed, DEFAULT_SETTINGS } from "./seed";
 import { expandRecurrence, overlaps, toMin } from "./bookings";
 import type {
   Booking,
@@ -23,7 +24,7 @@ let state: DB | null = null;
 const listeners = new Set<() => void>();
 
 const emptyDB = (): DB => ({
-  version: 1,
+  version: 2,
   users: [],
   products: [],
   courts: [],
@@ -35,25 +36,64 @@ const emptyDB = (): DB => ({
   currentUserId: null,
 });
 
+/**
+ * Prepara un database pulito preservando i dati da mantenere.
+ * Prenotazioni, sessioni, movimenti e transazioni vengono svuotati.
+ */
+function createCleanDB(source?: DB): DB {
+  const seed = buildSeed();
+
+  const currentAdmin =
+    source?.users?.find(
+      (user) => user.id === source.currentUserId && user.role === "admin",
+    ) ??
+    source?.users?.find((user) => user.role === "admin") ??
+    seed.users.find((user) => user.role === "admin")!;
+
+  return {
+    version: 2,
+    users: [currentAdmin],
+    products: Array.isArray(source?.products) ? source.products : seed.products,
+    courts:
+      Array.isArray(source?.courts) && source.courts.length > 0
+        ? source.courts
+        : seed.courts,
+    sessions: [],
+    bookings: [],
+    movements: [],
+    transactions: [],
+    settings: source?.settings ?? seed.settings,
+    currentUserId: null,
+  };
+}
+
 function load(): DB {
   if (state) return state;
   if (typeof window === "undefined") return emptyDB();
+
   try {
     const raw = window.localStorage.getItem(KEY);
+
     if (raw) {
       const parsed = JSON.parse(raw) as DB;
-      // Migrazione: database salvati prima delle prenotazioni.
-      if (!Array.isArray(parsed.bookings) || parsed.bookings.length === 0) {
-        parsed.bookings = buildBookings();
+
+      // Migrazione una tantum dal database precedente.
+      if (!parsed.version || parsed.version < 2) {
+        state = createCleanDB(parsed);
+        persist();
+        return state;
       }
+
       state = parsed;
-      persist();
       return state;
     }
   } catch {
     /* ignore corrupt storage */
   }
-  state = buildSeed();
+
+  // Prima installazione: inizializza prodotti, campi e admin,
+  // senza dati dimostrativi di attività.
+  state = createCleanDB();
   persist();
   return state;
 }
@@ -590,9 +630,9 @@ export const config = {
     }
   },
   reset() {
-    const seed = buildSeed();
+    const cleanDB = createCleanDB();
     set((d) => {
-      Object.assign(d, seed);
+      Object.assign(d, cleanDB);
     });
   },
 };
@@ -804,4 +844,3 @@ export const series = {
     return ids.size;
   },
 };
-
