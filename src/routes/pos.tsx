@@ -131,6 +131,7 @@ function PosPage() {
     toast.success(`Addebitato a ${c?.name} · ${pl?.name} — saldo a fine partita`);
   }
 
+ 
   function confirm() {
     const items: TxItem[] = cart.map((l) => ({
       productId: l.product.id,
@@ -139,6 +140,7 @@ function PosPage() {
       price: l.product.price,
       cost: l.product.cost,
     }));
+
     const id = sales.record({
       items,
       discount: disc,
@@ -148,12 +150,19 @@ function PosPage() {
       kind: "bar",
       label: "Vendita Bar",
     });
+
     setLines([]);
     setDiscount("0");
     setCash("0");
     setPayOpen(false);
-    toast.success(`Vendita ${id} registrata — ${eur(total)}`);
+
+    if (method === "omaggio") {
+      toast.success(`Omaggio registrato — ${items.length} prodotti movimentati`);
+    } else {
+      toast.success(`Vendita ${id} registrata — ${eur(total)}`);
+    }
   }
+
 
   return (
     <div className="grid grid-cols-1 gap-5 pb-20 xl:grid-cols-[1fr_380px] xl:pb-0">
