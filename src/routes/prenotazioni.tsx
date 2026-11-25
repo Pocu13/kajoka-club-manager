@@ -2,14 +2,15 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
-import { CalendarPlus, ChevronLeft, ChevronRight, Clock, Euro, Loader2, Pencil, Repeat, Trash2, Wand2 } from "lucide-react";
+import { CalendarPlus, ChevronLeft, ChevronRight, Clock, Euro, Loader2, Pencil, Plus, Repeat, Trash2, Wand2 } from "lucide-react";
 import { useServerFn } from "@tanstack/react-start";
 import { parseBookingRequest } from "@/lib/ai-booking.functions";
 import { AppShell } from "@/components/app-shell";
+import { SessionDrawer } from "@/components/session-drawer";
 import { WhatsAppShare } from "@/components/whatsapp-share";
 import { bookingMessage } from "@/lib/whatsapp";
 import { Badge, Btn, Drawer, Field, Input, Modal, Panel, Select } from "@/components/ui-kit";
-import { reservations, series, useCurrentUser, useDB, type SeriesScope } from "@/lib/store";
+import { courtSessions, reservations, series, useCurrentUser, useDB, type SeriesScope } from "@/lib/store";
 import { eur } from "@/lib/format";
 import {
   bookingPrice,
@@ -28,7 +29,7 @@ import {
   toMin,
   type FamilyKey,
 } from "@/lib/bookings";
-import type { Booking, BookingKind, RecurrenceFreq } from "@/lib/types";
+import type { Booking, BookingKind, Player, RecurrenceFreq } from "@/lib/types";
 
 export type FormInit = {
   courtId: string;
@@ -82,6 +83,7 @@ function BookingsPage() {
   const [dayOffset, setDayOffset] = useState(0);
   const [now, setNow] = useState(() => minutesNow());
   const [detail, setDetail] = useState<string | null>(null);
+  const [operationalBookingId, setOperationalBookingId] = useState<string | null>(null);
   const [form, setForm] = useState<FormInit | null>(null);
   const [pastSlot, setPastSlot] = useState<{
     courtName: string;
@@ -120,6 +122,38 @@ function BookingsPage() {
     .sort((a, b) => toMin(a.start) - toMin(b.start))[0];
 
   const selected = db.bookings.find((b) => b.id === detail) ?? null;
+
+  const operationalBooking =
+    db.bookings.find((b) => b.id === operationalBookingId && !b.cancelled) ?? null;
+  const operationalCourt = operationalBooking
+    ? db.courts.find((c) => c.id === operationalBooking.courtId) ?? null
+    : null;
+  const operationalSession = operationalBooking
+    ? db.sessions.find(
+        (session) => !session.closed && session.bookingId === operationalBooking.id,
+      ) ?? null
+    : null;
+
+  const openBooking = (booking: Booking) => {
+    const todayKey = dateKey(new Date());
+    const isCurrentBooking =
+      booking.date === todayKey &&
+      minutesNow() >= toMin(booking.start) &&
+      minutesNow() < toMin(booking.end);
+
+    if (isCurrentBooking && booking.kind !== "manutenzione") {
+      try {
+        courtSessions.checkIn(booking);
+        setDetail(null);
+        setOperationalBookingId(booking.id);
+      } catch (error) {
+        toast.error(error instanceof Error ? error.message : "Impossibile avviare la sessione");
+      }
+      return;
+    }
+
+    setDetail(booking.id);
+  };
 
   return (
     <div className="space-y-4">
@@ -308,7 +342,7 @@ function BookingsPage() {
                     return (
                       <button
                         key={b.id}
-                        onClick={() => setDetail(b.id)}
+                        onClick={() => openBooking(b)}
                         title={`${b.title} · ${b.start}–${b.end}`}
                         className={cn(
                           "absolute top-0 bottom-0 overflow-hidden rounded-md border px-1.5 py-1 text-left transition-opacity hover:opacity-90",
@@ -378,6 +412,29 @@ function BookingsPage() {
         booking={selected}
         onClose={() => setDetail(null)}
         canCancel={user?.role === "admin" || !!user?.permissions.includes("campi")}
+        canPrepay={
+          !!selected &&
+          selected.kind === "partita" &&
+          !selected.cancelled &&
+          (selected.date > dateKey(new Date()) ||
+            (selected.date === dateKey(new Date()) && minutesNow() < toMin(selected.start)))
+        }
+      />
+
+      <SessionDrawer
+        court={operationalCourt}
+        session={operationalSession}
+        booking={operationalBooking}
+        upcomingBooking={null}
+        onClose={() => setOperationalBookingId(null)}
+        onStart={() => setOperationalBookingId(null)}
+        onCheckIn={(b) => {
+          try {
+            courtSessions.checkIn(b);
+          } catch (error) {
+            toast.error(error instanceof Error ? error.message : "Impossibile avviare la sessione");
+          }
+        }}
       />
 
       <Drawer
@@ -737,10 +794,12 @@ function BookingDetail({
   booking,
   onClose,
   canCancel,
+  canPrepay,
 }: {
   booking: Booking | null;
   onClose: () => void;
   canCancel: boolean;
+  canPrepay: boolean;
 }) {
   const db = useDB();
   const [confirm, setConfirm] = useState(false);
@@ -749,6 +808,12 @@ function BookingDetail({
   const [eStart, setEStart] = useState("");
   const [eDur, setEDur] = useState(90);
   const [eCourt, setECourt] = useState("");
+  const [participants, setParticipants] = useState<Player[]>([]);
+  const [payOpen, setPayOpen] = useState(false);
+  const [payIds, setPayIds] = useState<string[]>([]);
+  const [payMethod, setPayMethod] = useState<"contanti" | "carta" | "misto">("carta");
+  const [payCash, setPayCash] = useState("0");
+
   useEffect(() => {
     if (!booking) return;
     setScope("this");
@@ -756,11 +821,36 @@ function BookingDetail({
     setEStart(booking.start);
     setEDur(toMin(booking.end) - toMin(booking.start));
     setECourt(booking.courtId);
+
+    const isPadel = db.courts.find((c) => c.id === booking.courtId)?.type === "padel";
+    const count = isPadel
+      ? 4
+      : Math.max(2, Math.min(4, booking.participants?.length || booking.players.length || 2));
+
+    const initialPlayers: Player[] = Array.from({ length: count }, (_, index) => {
+      const existing = booking.participants?.[index];
+      return existing
+        ? { ...existing, extras: [...(existing.extras ?? [])] }
+        : {
+            id: `booking-${booking.id}-player-${index + 1}`,
+            name: booking.players[index] ?? "",
+            quota: Math.round((booking.price / count) * 100) / 100,
+            paid: false,
+            extras: [],
+          };
+    });
+
+    setParticipants(initialPlayers);
+    setPayOpen(false);
+    setPayIds([]);
   }, [booking?.id]); // eslint-disable-line react-hooks/exhaustive-deps
+
   if (!booking) return null;
+
   const seriesCount = booking.seriesId
     ? db.bookings.filter((b) => b.seriesId === booking.seriesId && !b.cancelled).length
     : 0;
+
   const saveEdit = () => {
     const c = db.courts.find((x) => x.id === eCourt);
     if (!c) return;
@@ -777,7 +867,128 @@ function BookingDetail({
     toast.success(`Aggiornati ${r.updated} blocchi`);
     setEditing(false);
   };
+
   const court = db.courts.find((c) => c.id === booking.courtId);
+  const fixedParticipants = court?.type === "padel";
+  const participantLimit = 4;
+
+  const selectedPlayers = participants.filter(
+    (player) => payIds.includes(player.id) && !player.paid,
+  );
+
+  const payTotal = Math.round(
+    selectedPlayers.reduce(
+      (sum, player) =>
+        sum +
+        player.quota +
+        player.extras.reduce((extraSum, extra) => extraSum + extra.price * extra.qty, 0),
+      0,
+    ) * 100,
+  ) / 100;
+
+  const cashAmount = Number(payCash.replace(",", ".")) || 0;
+
+  const updateParticipants = (next: Player[]) => {
+    const quota = Math.round((booking.price / Math.max(1, next.length)) * 100) / 100;
+    setParticipants(
+      next.map((player, index) => ({
+        ...player,
+        quota:
+          index === next.length - 1
+            ? Math.round((booking.price - quota * (next.length - 1)) * 100) / 100
+            : quota,
+      })),
+    );
+  };
+
+  const saveParticipants = () => {
+    const names = participants.map((player) => player.name.trim());
+    if (names.some((name) => !name)) {
+      toast.error("Inserisci il nome di tutti i partecipanti.");
+      return false;
+    }
+
+    const result = reservations.update(booking.id, { participants, players: names });
+    if (!result.ok) {
+      toast.error(result.error ?? "Impossibile salvare i partecipanti");
+      return false;
+    }
+    return true;
+  };
+
+  const addParticipant = () => {
+    if (participants.length >= participantLimit || fixedParticipants) return;
+
+    updateParticipants([
+      ...participants,
+      {
+        id: `booking-${booking.id}-player-${Date.now()}`,
+        name: "",
+        quota: 0,
+        paid: false,
+        extras: [],
+      },
+    ]);
+  };
+
+  const removeParticipant = (playerId: string) => {
+    if (fixedParticipants || participants.length <= 2 || participants.some((p) => p.paid)) return;
+    updateParticipants(participants.filter((player) => player.id !== playerId));
+  };
+
+  const submitPrepayment = () => {
+    if (!payIds.length) {
+      toast.error("Seleziona almeno un partecipante da pagare.");
+      return;
+    }
+
+    if (participants.some((player) => !player.name.trim())) {
+      toast.error("Inserisci il nome di tutti i partecipanti.");
+      return;
+    }
+
+    if (payMethod === "misto" && (cashAmount < 0 || cashAmount > payTotal)) {
+      toast.error("Controlla la ripartizione tra contanti e carta.");
+      return;
+    }
+
+    const saved = reservations.update(booking.id, {
+      participants,
+      players: participants.map((player) => player.name.trim()),
+    });
+
+    if (!saved.ok) {
+      toast.error(saved.error ?? "Impossibile salvare i partecipanti");
+      return;
+    }
+
+    const result = courtSessions.payBookingPlayers(
+      booking.id,
+      payIds,
+      payMethod,
+      payMethod === "misto" ? cashAmount : payMethod === "contanti" ? payTotal : 0,
+      payMethod === "misto"
+        ? Math.round((payTotal - cashAmount) * 100) / 100
+        : payMethod === "carta"
+          ? payTotal
+          : 0,
+    );
+
+    if (!result.ok) {
+      toast.error(result.error ?? "Pagamento non riuscito");
+      return;
+    }
+
+    setParticipants((current) =>
+      current.map((player) =>
+        payIds.includes(player.id) ? { ...player, paid: true } : player,
+      ),
+    );
+
+    toast.success(`Pagamento anticipato registrato: ${eur(payTotal)}`);
+    setPayOpen(false);
+    setPayIds([]);
+  };
 
   return (
     <>
@@ -804,12 +1015,30 @@ function BookingDetail({
         }
       >
         <div className="space-y-4">
-          <div className="flex flex-wrap gap-2">
+          <div className="flex w-full flex-wrap items-center gap-2">
             <Badge tone={booking.cancelled ? "danger" : "primary"}>
               {booking.cancelled ? "ANNULLATA" : KIND_LABEL[booking.kind].toUpperCase()}
             </Badge>
             <Badge tone="neutral">{booking.date}</Badge>
             {booking.source === "ai" && <Badge tone="info">DA AI</Badge>}
+
+            {canPrepay && participants.some((player) => !player.paid) && (
+              <Btn
+                variant="primary"
+                size="sm"
+                className="ml-auto"
+                onClick={() => {
+                  setPayIds(
+                    participants.filter((player) => !player.paid).map((player) => player.id),
+                  );
+                  setPayMethod("carta");
+                  setPayCash("0");
+                  setPayOpen(true);
+                }}
+              >
+                <Euro className="size-4" /> PAGA
+              </Btn>
+            )}
           </div>
 
           {booking.seriesId && booking.recurrence && (
@@ -868,24 +1097,81 @@ function BookingDetail({
           )}
 
           <div>
-            <div className="label-caps mb-2 text-muted-foreground">Giocatori</div>
-            {booking.players.length ? (
-              <div className="space-y-2">
-                {booking.players.map((p, i) => (
-                  <div
-                    key={p + i}
-                    className="flex items-center gap-3 rounded-lg border border-border bg-surface-container px-3 py-2 text-sm"
-                  >
-                    <span className="mono flex size-6 items-center justify-center rounded-full bg-primary/20 text-[11px] text-primary">
-                      {i + 1}
-                    </span>
-                    {p}
-                    {i === 0 && <Badge tone="success" className="ml-auto">TITOLARE</Badge>}
-                  </div>
-                ))}
-              </div>
-            ) : (
-              <p className="text-sm text-muted-foreground">Nessun giocatore associato.</p>
+            <div className="mb-2 flex items-center justify-between gap-2">
+              <div className="label-caps text-muted-foreground">Giocatori e quote</div>
+              {!fixedParticipants &&
+                participants.length < participantLimit &&
+                !participants.some((player) => player.paid) &&
+                !booking.cancelled && (
+                  <Btn variant="outline" size="sm" onClick={addParticipant}>
+                    <Plus className="size-3" /> Aggiungi
+                  </Btn>
+                )}
+            </div>
+
+            <div className="space-y-2">
+              {participants.map((player, index) => (
+                <div
+                  key={player.id}
+                  className="flex items-center gap-2 rounded-lg border border-border bg-surface-container px-3 py-2"
+                >
+                  <span className="mono flex size-6 shrink-0 items-center justify-center rounded-full bg-primary/20 text-[11px] text-primary">
+                    {index + 1}
+                  </span>
+                  <Input
+                    value={player.name}
+                    placeholder={`Giocatore ${index + 1}`}
+                    disabled={player.paid || booking.cancelled}
+                    onChange={(event) =>
+                      setParticipants((current) =>
+                        current.map((item) =>
+                          item.id === player.id ? { ...item, name: event.target.value } : item,
+                        ),
+                      )
+                    }
+                    className="min-w-0"
+                  />
+                  <span className="mono shrink-0 text-xs">{eur(player.quota)}</span>
+                  {player.paid ? (
+                    <Badge tone="success">PAGATO</Badge>
+                  ) : (
+                    <Badge tone="warning">DA PAGARE</Badge>
+                  )}
+                  {!fixedParticipants &&
+                    participants.length > 2 &&
+                    !participants.some((item) => item.paid) &&
+                    !booking.cancelled && (
+                      <button
+                        type="button"
+                        className="rounded p-1 text-muted-foreground hover:text-destructive"
+                        title="Rimuovi giocatore"
+                        onClick={() => removeParticipant(player.id)}
+                      >
+                        <Trash2 className="size-4" />
+                      </button>
+                    )}
+                </div>
+              ))}
+            </div>
+
+            <p className="mt-2 text-xs text-muted-foreground">
+              {court?.type === "padel"
+                ? "Padel: 4 partecipanti obbligatori."
+                : "Tennis e Beach: da 2 a 4 partecipanti."}{" "}
+              Quota campo ripartita tra i partecipanti.
+            </p>
+
+            {!booking.cancelled && (
+              <Btn
+                variant="outline"
+                size="sm"
+                className="mt-2 w-full"
+                onClick={() => {
+                  if (saveParticipants()) toast.success("Partecipanti e quote salvati");
+                }}
+              >
+                Salva partecipanti
+              </Btn>
             )}
           </div>
 
@@ -907,6 +1193,98 @@ function BookingDetail({
           )}
         </div>
       </Drawer>
+
+      <Modal
+        open={payOpen}
+        onClose={() => setPayOpen(false)}
+        title="Pagamento anticipato"
+        footer={
+          <>
+            <Btn variant="outline" onClick={() => setPayOpen(false)}>
+              Annulla
+            </Btn>
+            <Btn
+              variant="primary"
+              disabled={
+                !payIds.length ||
+                payTotal <= 0 ||
+                (payMethod === "misto" && (cashAmount < 0 || cashAmount > payTotal))
+              }
+              onClick={submitPrepayment}
+            >
+              Registra pagamento · {eur(payTotal)}
+            </Btn>
+          </>
+        }
+      >
+        <div className="space-y-4">
+          <p className="text-sm text-muted-foreground">
+            Seleziona i partecipanti che saldano ora. La prenotazione rimane confermata fino
+            all'orario di inizio.
+          </p>
+
+          <div className="space-y-2">
+            {participants.map((player) => (
+              <label
+                key={player.id}
+                className="flex items-center gap-3 rounded-lg border border-border bg-surface-container p-3"
+              >
+                <input
+                  type="checkbox"
+                  checked={payIds.includes(player.id)}
+                  disabled={player.paid}
+                  onChange={(event) =>
+                    setPayIds((current) =>
+                      event.target.checked
+                        ? [...current, player.id]
+                        : current.filter((id) => id !== player.id),
+                    )
+                  }
+                />
+                <span className="min-w-0 flex-1 text-sm">
+                  {player.name || "Nome da inserire"}
+                </span>
+                <span className="mono text-sm">{eur(player.quota)}</span>
+                {player.paid && <Badge tone="success">PAGATO</Badge>}
+              </label>
+            ))}
+          </div>
+
+          <Field label="Metodo di pagamento">
+            <Select
+              value={payMethod}
+              onChange={(event) =>
+                setPayMethod(event.target.value as "contanti" | "carta" | "misto")
+              }
+            >
+              <option value="contanti">Contanti</option>
+              <option value="carta">Carta / POS</option>
+              <option value="misto">Misto</option>
+            </Select>
+          </Field>
+
+          {payMethod === "misto" && (
+            <Field label="Importo in contanti">
+              <Input
+                type="number"
+                min="0"
+                max={payTotal}
+                step="0.01"
+                value={payCash}
+                onChange={(event) => setPayCash(event.target.value)}
+              />
+              <p className="text-xs text-muted-foreground">
+                Carta: {eur(Math.max(0, payTotal - cashAmount))}
+              </p>
+            </Field>
+          )}
+
+          <Panel className="flex items-center justify-between p-3">
+            <span className="label-caps text-muted-foreground">Totale selezionato</span>
+            <span className="mono text-xl font-bold">{eur(payTotal)}</span>
+          </Panel>
+        </div>
+      </Modal>
 
       <Modal
         open={confirm}
