@@ -1,3 +1,4 @@
+
 export type Role = "admin" | "dipendente";
 
 export type PaymentMethod = "contanti" | "carta" | "misto" | "omaggio";
@@ -83,6 +84,7 @@ export interface Transaction {
   operatorName: string;
   courtId?: string | undefined;
   sessionId?: string | undefined;
+  bookingId?: string | undefined;
   playerName?: string | undefined;
   note: string;
   cancelled: boolean;
@@ -127,7 +129,7 @@ export interface Session {
   total: number;
   players: Player[];
   closed: boolean;
-  /** Prenotazione da cui è stato fatto il check-in */
+  /** Prenotazione da cui è stato avviato il check-in o la sessione automatica. */
   bookingId?: string;
 }
 
@@ -144,6 +146,12 @@ export interface Booking {
   kind: BookingKind;
   title: string;
   players: string[];
+  /**
+   * Partecipanti operativi della prenotazione.
+   * Conserva quote, pagamenti anticipati ed eventuali extra
+   * anche prima della creazione della sessione.
+   */
+  participants?: Player[];
   extras: string[];
   price: number;
   note: string;
