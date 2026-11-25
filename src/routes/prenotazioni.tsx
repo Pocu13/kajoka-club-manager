@@ -1,3 +1,4 @@
+
 import { createFileRoute } from "@tanstack/react-router";
 import { useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
@@ -41,7 +42,7 @@ export type FormInit = {
 };
 import { cn } from "@/lib/utils";
 
-const PPM = 1.7; // pixel per minuto
+const PPM = 1.7;
 const TRACK = (OPEN_TO - OPEN_FROM) * PPM;
 const DAY_NAMES = ["Dom", "Lun", "Mar", "Mer", "Gio", "Ven", "Sab"];
 const MONTHS = [
@@ -82,6 +83,12 @@ function BookingsPage() {
   const [now, setNow] = useState(() => minutesNow());
   const [detail, setDetail] = useState<string | null>(null);
   const [form, setForm] = useState<FormInit | null>(null);
+  const [pastSlot, setPastSlot] = useState<{
+    courtName: string;
+    date: string;
+    start: string;
+    end: string;
+  } | null>(null);
 
   useEffect(() => {
     const t = window.setInterval(() => setNow(minutesNow()), 30_000);
@@ -209,6 +216,7 @@ function BookingsPage() {
         <LegendDot cls="bg-[#c0392b]" label="Prenotato" />
         <LegendDot cls="bg-[#6c4fc1]" label="Allenamento serie" />
         <LegendDot cls="bg-[#1d3b26]" label="Lezione privata / SAP" />
+        <LegendDot cls="bg-[#1b472b]" label="Slot passato" />
         <span className="mono ml-auto text-xs text-muted-foreground">
           {MONTHS[day.getMonth()]} {day.getDate()} · intervallo slot: 60 min
         </span>
@@ -245,29 +253,51 @@ function BookingsPage() {
                 <div className="relative h-[74px]" style={{ width: TRACK }}>
                   {Array.from({ length: (OPEN_TO - OPEN_FROM) / 60 }).map((_, i) => {
                     const start = OPEN_FROM + i * 60;
-                    const past = isToday && start + 60 <= now;
+                    const end = start + 60;
+                    const past = isToday && end <= now;
+
                     return (
                       <button
                         key={i}
-                        disabled={past}
-                        onClick={() => setForm({ courtId: court.id, start })}
-                        title={`${court.name} · ${toHHMM(start)} libero`}
-                        className={cn(
-                          "absolute top-0 bottom-0 rounded-md border text-left transition-opacity",
+                        type="button"
+                        onClick={() => {
+                          if (past) {
+                            setPastSlot({
+                              courtName: court.name,
+                              date,
+                              start: toHHMM(start),
+                              end: toHHMM(end),
+                            });
+                            return;
+                          }
+                          setForm({ courtId: court.id, start });
+                        }}
+                        title={
                           past
-                            ? "cursor-not-allowed border-border bg-surface-high/40"
+                            ? `${court.name} · ${toHHMM(start)}–${toHHMM(end)} · Slot passato, non prenotabile`
+                            : `${court.name} · ${toHHMM(start)} libero`
+                        }
+                        aria-label={
+                          past
+                            ? `Visualizza slot passato ${court.name} ${toHHMM(start)}–${toHHMM(end)}`
+                            : `Prenota ${court.name} ${toHHMM(start)}`
+                        }
+                        className={cn(
+                          "absolute top-0 bottom-0 rounded-md border text-left transition-colors",
+                          past
+                            ? "cursor-pointer border-[#285b38] bg-[#1b472b] text-white hover:bg-[#245b37]"
                             : "border-[#9ccc4f] bg-[#8bc34a] hover:opacity-80",
                         )}
                         style={{ left: i * 60 * PPM + 2, width: 60 * PPM - 4 }}
                       >
-                        <span
-                          className={cn(
-                            "mono absolute top-1 left-1.5 text-[10px] font-bold",
-                            past ? "text-muted-foreground" : "text-black/80",
-                          )}
-                        >
+                        <span className="mono absolute top-1 left-1.5 text-[10px] font-bold text-white">
                           {toHHMM(start)}
                         </span>
+                        {past && (
+                          <span className="absolute bottom-1 left-1.5 text-[9px] font-medium text-white/80">
+                            PASSATO
+                          </span>
+                        )}
                       </button>
                     );
                   })}
@@ -349,6 +379,32 @@ function BookingsPage() {
         onClose={() => setDetail(null)}
         canCancel={user?.role === "admin" || !!user?.permissions.includes("campi")}
       />
+
+      <Drawer
+        open={!!pastSlot}
+        onClose={() => setPastSlot(null)}
+        title="Slot passato"
+        subtitle="Consultazione disponibilità"
+        width="w-[400px]"
+      >
+        {pastSlot && (
+          <div className="space-y-4">
+            <Badge tone="neutral">NON PRENOTABILE</Badge>
+            <Panel className="space-y-3 p-4">
+              <Row label="Campo" value={pastSlot.courtName} />
+              <Row label="Data" value={pastSlot.date} />
+              <Row label="Orario" value={`${pastSlot.start} → ${pastSlot.end}`} />
+            </Panel>
+            <p className="text-sm text-muted-foreground">
+              Questo intervallo orario è già trascorso. Puoi consultarlo, ma non è possibile
+              creare una nuova prenotazione per questo slot.
+            </p>
+            <Btn variant="outline" className="w-full" onClick={() => setPastSlot(null)}>
+              Chiudi
+            </Btn>
+          </div>
+        )}
+      </Drawer>
     </div>
   );
 }
