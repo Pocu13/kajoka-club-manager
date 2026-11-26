@@ -1122,34 +1122,40 @@ function BookingDetail({
     }
 
     setParticipants((current) =>
-      current.map((player) =>
-        payIds.includes(player.id)
-          ? { ...player, paid: true }
-          : player,
-      ),
-    );
-
-    toast.success(
-      `Pagamento anticipato registrato: ${eur(payTotal)}`,
-    );
-
-    setPayOpen(false);
-    setPayIds([]);
-  };
-
-  return (
-    <>
-      <Drawer
-        open
-        onClose={onClose}
-        title={booking.title}
-        subtitle={`${court?.name ?? "Campo"} · ${booking.start} → ${booking.end}`}
+     
         footer={
-          canCancel && !booking.cancelled ? (
-            <div className="grid grid-cols-2 gap-2">
+          !booking.cancelled ? (
+            <div className="flex gap-2">
               {editing ? (
                 <Btn
                   variant="primary"
+                  className="flex-1"
+                  onClick={saveEdit}
+                >
+                  Salva modifiche
+                </Btn>
+              ) : (
+                <Btn
+                  variant="outline"
+                  className="flex-1"
+                  onClick={() => setEditing(true)}
+                >
+                  <Pencil className="size-4" /> Modifica
+                </Btn>
+              )}
+
+              {canCancel && (
+                <Btn
+                  variant="danger"
+                  onClick={() => setConfirm(true)}
+                >
+                  <Trash2 className="size-4" /> Annulla
+                </Btn>
+              )}
+            </div>
+          ) : undefined
+        }
+
                   onClick={saveEdit}
                 >
                   Salva modifiche
@@ -1228,81 +1234,27 @@ function BookingDetail({
                 {FREQ_LABEL[booking.recurrence.freq]} fino al{" "}
                 {booking.recurrence.until}
 
-                {booking.recurrence.exceptions.length > 0 &&
-                  ` · eccezioni: ${booking.recurrence.exceptions.join(", ")}`}
-              </div>
+            <Field label="Prezzo totale prenotazione (€)">
+              <Input
+                type="number"
+                min="0"
+                step="0.01"
+                value={bookingPriceValue}
+                onChange={(event) =>
+                  setBookingPriceValue(event.target.value)
+                }
+              />
+            </Field>
 
-              <Field label="Applica modifiche / annullamento a">
-                <Select
-                  value={scope}
-                  onChange={(e) =>
-                    setScope(e.target.value as SeriesScope)
-                  }
-                >
-                  <option value="this">
-                    Solo questo blocco
-                  </option>
-                  <option value="future">
-                    Questo e i successivi
-                  </option>
-                  <option value="all">
-                    Tutta la serie
-                  </option>
-                </Select>
-              </Field>
-            </Panel>
-          )}
+            <Btn
+              variant="outline"
+              size="sm"
+              className="w-full"
+              onClick={saveBookingPrice}
+            >
+              Salva prezzo
+            </Btn>
 
-          {editing && (
-            <Panel className="space-y-3 p-4">
-              <Field label="Prezzo totale prenotazione (€)">
-                <Input
-                  type="number"
-                  min="0"
-                  step="0.01"
-                  value={bookingPriceValue}
-                  onChange={(event) =>
-                    setBookingPriceValue(event.target.value)
-                  }
-                />
-              </Field>
-
-              <Field label="Campo">
-                <Select
-                  value={eCourt}
-                  onChange={(e) =>
-                    setECourt(e.target.value)
-                  }
-                >
-                  {db.courts
-                    .filter((c) => c.active)
-                    .map((c) => (
-                      <option key={c.id} value={c.id}>
-                        {c.name}
-                      </option>
-                    ))}
-                </Select>
-              </Field>
-
-              <div className="grid grid-cols-2 gap-3">
-                <Field label="Ora inizio">
-                  <Input
-                    type="time"
-                    step={1800}
-                    value={eStart}
-                    onChange={(e) =>
-                      setEStart(e.target.value)
-                    }
-                  />
-                </Field>
-
-                <Field label="Durata">
-                  <Select
-                    value={eDur}
-                    onChange={(e) =>
-                      setEDur(Number(e.target.value))
-                    }
-                  >
                     {[60, 90, 120].map((m) => (
                       <option key={m} value={m}>
                         {m} min
