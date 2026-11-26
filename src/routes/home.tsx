@@ -1,4 +1,3 @@
-
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
@@ -305,28 +304,40 @@ function HomePage() {
     setSelectedBlockStart(Number(value));
     setBlockMenuOpen(false);
   };
-
-  // Mostra le sessioni soltanto nei blocchi temporali in cui sono effettivamente attive.
+    // Recupera le sessioni che corrispondono al blocco selezionato.
+  // Le sessioni concluse vengono mostrate soltanto selezionando un blocco
+  // passato e non vengono considerate campi occupati.
   const sessionByCourt = useMemo(() => {
     const sessions = new Map<string, Session>();
 
-    db.sessions.filter((session) => !session.closed).forEach((session) => {
+    const isPastBlock = activeBlock.start < currentMinute;
+
+    db.sessions.forEach((session) => {
       const startedAt = new Date(session.startedAt);
 
       if (dateKey(startedAt) !== todayKey) return;
 
       const startMinute = minutesNow(startedAt);
+      const endMinute = startMinute + session.durationMin;
 
-      if (
+      const matchesBlock =
         startMinute <= activeBlock.start &&
-        activeBlock.start < startMinute + session.durationMin
-      ) {
+        activeBlock.start < endMinute;
+
+      if (!matchesBlock) return;
+
+      if (!session.closed) {
+        sessions.set(session.courtId, session);
+        return;
+      }
+
+      if (isPastBlock && !sessions.has(session.courtId)) {
         sessions.set(session.courtId, session);
       }
     });
 
     return sessions;
-  }, [db.sessions, todayKey, activeBlock.start]);
+  }, [db.sessions, todayKey, activeBlock.start, currentMinute]);
 
   const bookingByCourt = useMemo(() => {
     const bookings = new Map<string, Booking>();
@@ -350,9 +361,13 @@ function HomePage() {
     return bookings;
   }, [db.bookings, db.courts, todayKey, activeBlock.start]);
 
-  const occupied = db.courts.filter(
-    (c) => sessionByCourt.has(c.id) || bookingByCourt.has(c.id),
-  ).length;
+  // Le sessioni concluse non occupano il campo.
+  const occupied = db.courts.filter((c) => {
+    const session = sessionByCourt.get(c.id);
+    const booking = bookingByCourt.get(c.id);
+
+    return (session && !session.closed) || (!session && booking);
+  }).length;
 
   const free = db.courts.length - occupied;
   const today = new Date().toDateString();
@@ -542,15 +557,21 @@ function HomePage() {
                     ? toMin(upcoming.start) - activeBlock.start
                     : null;
 
+                  const closedSession = activeSession?.closed === true;
+
                   const position = getCourtPosition(c);
 
-                  const status = activeSession
-                    ? "IN CORSO"
-                    : activeBooking
-                      ? `PRENOTATO → ${activeBooking.end}`
-                      : minsToNext !== null && minsToNext <= 60
-                        ? `LIBERO · TRA ${minsToNext}′`
-                        : "LIBERO";
+                  const status = closedSession
+                    ? "CONCLUSA"
+                    : activeSession
+                      ? "IN CORSO"
+                      : activeBooking
+                        ? `PRENOTATO → ${activeBooking.end}`
+                        : minsToNext !== null && minsToNext <= 60
+                          ? `LIBERO · TRA ${minsToNext}′`
+                          : "LIBERO";
+
+                  const highlighted = !!activeSession || !!activeBooking;
 
                   return (
                     <button
@@ -573,7 +594,7 @@ function HomePage() {
                       }}
                       className={cn(
                         "absolute z-10 flex -translate-x-1/2 -translate-y-1/2 items-center whitespace-nowrap rounded-lg border bg-black/85 leading-tight shadow-lg backdrop-blur-sm transition-colors hover:z-20 hover:bg-black focus-visible:z-20 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary",
-                        activeSession || activeBooking
+                        highlighted
                           ? "border-primary/70"
                           : "border-border-strong",
                       )}
@@ -581,7 +602,11 @@ function HomePage() {
                       <span
                         className={cn(
                           "shrink-0 rounded-full",
-                          activeSession || activeBooking ? "bg-primary" : "bg-success",
+                          closedSession
+                            ? "bg-muted-foreground"
+                            : highlighted
+                              ? "bg-primary"
+                              : "bg-success",
                         )}
                         style={{
                           width: compactMap ? 6 : 8,
@@ -597,9 +622,11 @@ function HomePage() {
                         <span
                           className={cn(
                             "mono",
-                            activeSession || activeBooking
-                              ? "text-primary"
-                              : "text-success",
+                            closedSession
+                              ? "text-muted-foreground"
+                              : highlighted
+                                ? "text-primary"
+                                : "text-success",
                           )}
                           style={{ fontSize: cardFontSize - 1 }}
                         >
@@ -613,13 +640,14 @@ function HomePage() {
             </div>
           </div>
         ) : (
-          <div className="min-h-0 overflow-y-auto pr-1">
+                  <div className="min-h-0 overflow-y-auto pr-1">
             <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4">
               {db.courts.map((c) => {
                 const s = sessionByCourt.get(c.id);
                 const activeBooking = bookingByCourt.get(c.id);
                 const upcoming = nextBookingByCourt.get(c.id);
-                const busy = !!s || !!activeBooking;
+                const closedSession = s?.closed === true;
+                const busy = (!!s && !closedSession) || (!s && !!activeBooking);
 
                 return (
                   <button
@@ -627,16 +655,27 @@ function HomePage() {
                     onClick={() => setSelected(c.id)}
                     className={cn(
                       "rounded-xl border p-4 text-left transition-colors",
-                      busy
-                        ? "border-primary/50 bg-primary/5 hover:bg-primary/10"
-                        : "border-border bg-surface-low hover:bg-surface-high",
+                      closedSession
+                        ? "border-border bg-surface-low hover:bg-surface-high"
+                        : busy
+                          ? "border-primary/50 bg-primary/5 hover:bg-primary/10"
+                          : "border-border bg-surface-low hover:bg-surface-high",
                     )}
                   >
                     <div className="flex flex-wrap items-center justify-between gap-2">
                       <span className="font-display text-xl font-bold">{c.name}</span>
 
-                      <Badge tone={busy ? "primary" : "success"} dot>
-                        {s ? "OCCUPATO" : activeBooking ? "PRENOTATO" : "LIBERO"}
+                      <Badge
+                        tone={closedSession ? "neutral" : busy ? "primary" : "success"}
+                        dot
+                      >
+                        {closedSession
+                          ? "CONCLUSA"
+                          : s
+                            ? "OCCUPATO"
+                            : activeBooking
+                              ? "PRENOTATO"
+                              : "LIBERO"}
                       </Badge>
                     </div>
 
@@ -654,6 +693,11 @@ function HomePage() {
                             )}{" "}
                             / {eur(s.total)}
                           </div>
+                          {closedSession && (
+                            <div className="mt-1 text-xs text-muted-foreground">
+                              Apri il resoconto della partita
+                            </div>
+                          )}
                         </>
                       ) : activeBooking ? (
                         <>
@@ -752,7 +796,6 @@ function getRomeHour() {
 
   return Number(hour ?? new Date().getHours());
 }
-
 function NewSessionModal({
   open,
   onClose,
