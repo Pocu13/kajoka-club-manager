@@ -61,6 +61,10 @@ export function SessionDrawer({
   const [bookingParticipants, setBookingParticipants] = useState<Player[]>([]);
   const [bookingPrice, setBookingPrice] = useState("0");
 
+  // Dati modificabili del resoconto di una partita conclusa.
+  const [closedTotal, setClosedTotal] = useState("0");
+  const [closedPlayers, setClosedPlayers] = useState<Player[]>([]);
+
   useEffect(() => {
     if (!booking) {
       setBookingParticipants([]);
@@ -111,6 +115,25 @@ export function SessionDrawer({
 
     setBookingParticipants(initialParticipants);
   }, [booking?.id]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  useEffect(() => {
+    if (!session?.closed) {
+      setClosedTotal("0");
+      setClosedPlayers([]);
+      return;
+    }
+
+    setClosedTotal(String(session.total));
+    setClosedPlayers(
+      session.players.map((player) => ({
+        ...player,
+        extras: [...(player.extras ?? [])],
+      })),
+    );
+    setPayOpen(false);
+    setPayIds([]);
+    setEditQuotas(false);
+  }, [session?.id, session?.closed]);
 
   if (!court) return null;
 
@@ -243,6 +266,60 @@ export function SessionDrawer({
     toast.success("Prezzo, partecipanti e quote salvati.");
   };
 
+  const updateClosedPlayer = (
+    playerId: string,
+    patch: Partial<Pick<Player, "name" | "quota">>,
+  ) => {
+    setClosedPlayers((current) =>
+      current.map((item) =>
+        item.id === playerId && !item.paid
+          ? { ...item, ...patch }
+          : item,
+      ),
+    );
+  };
+
+  const saveClosedSession = () => {
+    if (!session?.closed) return;
+
+    const total = Number(closedTotal.replace(",", "."));
+
+    if (!Number.isFinite(total) || total < 0) {
+      toast.error("Inserisci un prezzo totale valido.");
+      return;
+    }
+
+    for (const item of closedPlayers) {
+      if (item.paid) continue;
+
+      if (!item.name.trim()) {
+        toast.error("Inserisci il nome di tutti i giocatori non pagati.");
+        return;
+      }
+
+      if (!Number.isFinite(item.quota) || item.quota < 0) {
+        toast.error(`Controlla la quota di ${item.name || "un giocatore"}.`);
+        return;
+      }
+    }
+
+    const result = courtSessions.updateClosedDetails(session.id, {
+      total: Math.round(total * 100) / 100,
+      players: closedPlayers.map((item) => ({
+        id: item.id,
+        name: item.name.trim(),
+        quota: item.quota,
+      })),
+    });
+
+    if (!result.ok) {
+      toast.error(result.error ?? "Impossibile salvare il resoconto.");
+      return;
+    }
+
+    toast.success("Resoconto della partita aggiornato.");
+  };
+
   return (
     <>
       <Drawer
@@ -252,86 +329,94 @@ export function SessionDrawer({
         title={court.name}
         subtitle={
           session
-            ? `Sessione attiva dalle ${fmtTime(session.startedAt)} · ${session.players.length} giocatori`
+            ? session.closed
+              ? `Partita conclusa · ${fmtTime(session.startedAt)} · ${session.players.length} giocatori`
+              : `Sessione attiva dalle ${fmtTime(session.startedAt)} · ${session.players.length} giocatori`
             : booking
               ? `Prenotazione attiva ${booking.start}–${booking.end} · ${booking.title}`
               : `Campo libero · ${eur(court.hourlyPrice)} / ora`
         }
-        footer={
+                footer={
           session ? (
-            <div className="space-y-3">
-              <div className="flex items-center justify-between">
-                <span className="label-caps text-muted-foreground">
-                  Totale da saldare
-                </span>
-                <span className="mono text-2xl font-bold">
-                  {eur(
-                    session.players
-                      .filter((p) => !p.paid)
-                      .reduce(
-                        (sum, p) => sum + playerTotal(p.id),
-                        0,
-                      ),
-                  )}
-                </span>
+            session.closed ? (
+              <div className="rounded-lg border border-border bg-surface-container p-3 text-center text-sm text-muted-foreground">
+                Partita conclusa · Resoconto storico modificabile
               </div>
+            ) : (
+              <div className="space-y-3">
+                <div className="flex items-center justify-between">
+                  <span className="label-caps text-muted-foreground">
+                    Totale da saldare
+                  </span>
+                  <span className="mono text-2xl font-bold">
+                    {eur(
+                      session.players
+                        .filter((p) => !p.paid)
+                        .reduce(
+                          (sum, p) => sum + playerTotal(p.id),
+                          0,
+                        ),
+                    )}
+                  </span>
+                </div>
 
-              <div className="grid grid-cols-2 gap-2">
+                <div className="grid grid-cols-2 gap-2">
+                  <Btn
+                    variant="outline"
+                    onClick={() => {
+                      const unpaid = session.players
+                        .filter((p) => !p.paid)
+                        .map((p) => p.id);
+
+                      if (!unpaid.length) {
+                        toast.info("Tutti i giocatori hanno saldato");
+                        return;
+                      }
+
+                      setPayIds(unpaid);
+                      setMethod("contanti");
+                      setCash("0");
+                      setPayOpen(true);
+                    }}
+                  >
+                    <Banknote className="size-4" /> Contanti
+                  </Btn>
+
+                  <Btn
+                    variant="primary"
+                    onClick={() => {
+                      const unpaid = session.players
+                        .filter((p) => !p.paid)
+                        .map((p) => p.id);
+
+                      if (!unpaid.length) {
+                        toast.info("Tutti i giocatori hanno saldato");
+                        return;
+                      }
+
+                      setPayIds(unpaid);
+                      setMethod("carta");
+                      setCash("0");
+                      setPayOpen(true);
+                    }}
+                  >
+                    <CreditCard className="size-4" /> Carta / POS
+                  </Btn>
+                </div>
+
                 <Btn
-                  variant="outline"
+                  variant="subtle"
+                  className="w-full"
                   onClick={() => {
-                    const unpaid = session.players
-                      .filter((p) => !p.paid)
-                      .map((p) => p.id);
-
-                    if (!unpaid.length) {
-                      toast.info("Tutti i giocatori hanno saldato");
-                      return;
-                    }
-
-                    setPayIds(unpaid);
-                    setMethod("contanti");
-                    setCash("0");
-                    setPayOpen(true);
+                    courtSessions.close(session.id);
+                    toast.success(`Sessione ${court.name} chiusa`);
+                    onClose();
                   }}
                 >
-                  <Banknote className="size-4" /> Contanti
-                </Btn>
-
-                <Btn
-                  variant="primary"
-                  onClick={() => {
-                    const unpaid = session.players
-                      .filter((p) => !p.paid)
-                      .map((p) => p.id);
-
-                    if (!unpaid.length) {
-                      toast.info("Tutti i giocatori hanno saldato");
-                      return;
-                    }
-
-                    setPayIds(unpaid);
-                    setMethod("carta");
-                    setCash("0");
-                    setPayOpen(true);
-                  }}
-                >
-                  <CreditCard className="size-4" /> Carta / POS
+                  Chiudi sessione e libera il campo
                 </Btn>
               </div>
-
-              <Btn
-                variant="subtle"
-                className="w-full"
-                onClick={() => {
-                  courtSessions.close(session.id);
-                  toast.success(`Sessione ${court.name} chiusa`);
-                  onClose();
-                }}
-              >
-                Chiudi sessione e libera il campo
-              </Btn>
-            </div>
+            )
           ) : (
             <div className="grid gap-2">
               {booking && booking.kind !== "manutenzione" && (
@@ -362,7 +447,7 @@ export function SessionDrawer({
           )
         }
       >
-                {!session ? (
+        {!session ? (
           <div className="space-y-4">
             {booking && (
               <>
@@ -569,6 +654,174 @@ export function SessionDrawer({
                 </div>
               </Panel>
             )}
+          </div>
+        ) : session.closed ? (
+          <div className="space-y-5">
+            <Panel className="space-y-3 p-4">
+              <div className="flex items-center justify-between gap-2">
+                <div>
+                  <div className="label-caps text-muted-foreground">
+                    Resoconto partita
+                  </div>
+                  <div className="mt-1 text-sm font-semibold">
+                    {new Date(session.startedAt).toLocaleDateString("it-IT")} ·{" "}
+                    {fmtTime(session.startedAt)}
+                  </div>
+                </div>
+                <Badge tone="success">CONCLUSA</Badge>
+              </div>
+
+              <Field label="Prezzo totale partita (€)">
+                <Input
+                  type="number"
+                  min="0"
+                  step="0.01"
+                  value={closedTotal}
+                  onChange={(event) => setClosedTotal(event.target.value)}
+                />
+              </Field>
+
+              <p className="text-xs text-muted-foreground">
+                La modifica del prezzo totale aggiorna il resoconto, ma non
+                cambia gli incassi già registrati.
+              </p>
+            </Panel>
+                        <Panel className="space-y-3 p-4">
+              <div className="flex items-center justify-between gap-2">
+                <div className="label-caps text-muted-foreground">
+                  Giocatori e quote
+                </div>
+                <span className="text-xs text-muted-foreground">
+                  {session.players.filter((item) => item.paid).length}/
+                  {session.players.length} pagati
+                </span>
+              </div>
+
+              {closedPlayers.map((item, index) => (
+                <div
+                  key={item.id}
+                  className="rounded-lg border border-border bg-surface-container p-3"
+                >
+                  <div className="mb-2 flex items-center gap-2">
+                    <span className="mono flex size-7 shrink-0 items-center justify-center rounded-full bg-surface-highest text-xs">
+                      {index + 1}
+                    </span>
+
+                    <div className="min-w-0 flex-1">
+                      <Input
+                        value={item.name}
+                        disabled={item.paid}
+                        placeholder={`Giocatore ${index + 1}`}
+                        onChange={(event) =>
+                          updateClosedPlayer(item.id, {
+                            name: event.target.value,
+                          })
+                        }
+                      />
+                    </div>
+
+                    {item.paid ? (
+                      <Badge tone="success">PAGATO</Badge>
+                    ) : (
+                      <Badge tone="warning">DA PAGARE</Badge>
+                    )}
+                  </div>
+
+                  <div className="flex items-center gap-2 pl-9">
+                    <div className="w-32">
+                      <Input
+                        type="number"
+                        min="0"
+                        step="0.01"
+                        value={String(item.quota)}
+                        disabled={item.paid}
+                        onChange={(event) =>
+                          updateClosedPlayer(item.id, {
+                            quota: Math.max(
+                              0,
+                              Number(event.target.value) || 0,
+                            ),
+                          })
+                        }
+                      />
+                    </div>
+                    <span className="text-xs text-muted-foreground">
+                      Quota giocatore (€)
+                    </span>
+                  </div>
+
+                  {item.extras.length > 0 && (
+                    <div className="mt-3 space-y-1 rounded-lg border border-border bg-surface px-3 py-2">
+                      <div className="label-caps text-muted-foreground">
+                        Extra registrati
+                      </div>
+
+                      {item.extras.map((extra) => (
+                        <div
+                          key={extra.productId}
+                          className="mono flex items-center justify-between text-[11px]"
+                        >
+                          <span>
+                            {extra.qty}× {extra.name}
+                          </span>
+                          <span>{eur(extra.price * extra.qty)}</span>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              ))}
+
+              <p className="text-xs text-muted-foreground">
+                I dati dei giocatori già pagati sono bloccati. Puoi correggere
+                i nomi e le quote dei soli giocatori non pagati.
+              </p>
+
+              <Btn
+                variant="primary"
+                className="w-full"
+                onClick={saveClosedSession}
+              >
+                Salva modifiche al resoconto
+              </Btn>
+            </Panel>
+
+            <Panel className="space-y-3 p-4">
+              <div className="flex items-center justify-between">
+                <span className="label-caps text-muted-foreground">
+                  Incasso storico quote
+                </span>
+                <span className="mono font-semibold">
+                  {eur(collected)}
+                </span>
+              </div>
+
+              <div className="flex items-center justify-between">
+                <span className="label-caps text-muted-foreground">
+                  Prezzo totale partita
+                </span>
+                <span className="mono font-semibold">
+                  {eur(session.total)}
+                </span>
+              </div>
+
+              <div className="text-xs text-muted-foreground">
+                Gli incassi storici sono mostrati a titolo informativo e non
+                vengono ricalcolati dalle modifiche del resoconto.
+              </div>
+            </Panel>
+
+            <WhatsAppShare
+              title="Invia riepilogo partita su WhatsApp"
+              text={sessionSummary(
+                {
+                  ...session,
+                  total: Number(closedTotal.replace(",", ".")) || session.total,
+                  players: closedPlayers,
+                },
+                court.name,
+              )}
+            />
           </div>
         ) : (
           <div className="space-y-5">
@@ -843,7 +1096,7 @@ export function SessionDrawer({
       </Drawer>
 
       <Modal
-        open={payOpen}
+        open={payOpen && !!session && !session.closed}
         onClose={() => setPayOpen(false)}
         title="Incasso quota campo"
         footer={
@@ -855,7 +1108,7 @@ export function SessionDrawer({
             <Btn
               variant="primary"
               onClick={() => {
-                if (!session) return;
+                if (!session || session.closed) return;
 
                 const cashAmount =
                   method === "misto" ? Number(cash) || 0 : 0;
@@ -924,4 +1177,3 @@ export function SessionDrawer({
     </>
   );
 }
-
