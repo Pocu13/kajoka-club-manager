@@ -1,4 +1,3 @@
-
 import { useSyncExternalStore } from "react";
 import { buildSeed, DEFAULT_SETTINGS } from "./seed";
 import { expandRecurrence, overlaps, toMin } from "./bookings";
@@ -332,8 +331,6 @@ export const catalog = {
 /* ------------------------------ transactions ------------------------------ */
 
 export const sales = {
-  
- 
   record(input: {
     items: TxItem[];
     discount: number;
@@ -451,7 +448,6 @@ export const sales = {
 };
 
 /* -------------------------------- sessions -------------------------------- */
-
 export const courtSessions = {
   /**
    * Avvia la sessione dalla prenotazione.
@@ -800,8 +796,7 @@ export const courtSessions = {
 
     return { ok: true };
   },
-
-  payPlayers(
+    payPlayers(
     sessionId: string,
     playerIds: string[],
     method: PaymentMethod,
@@ -872,7 +867,11 @@ export const courtSessions = {
 
   close(sessionId: string) {
     set((d) => {
-      d.sessions = d.sessions.filter((s) => s.id !== sessionId);
+      d.sessions = d.sessions.map((session) =>
+        session.id === sessionId
+          ? { ...session, closed: true }
+          : session,
+      );
     });
   },
 };
@@ -1015,7 +1014,6 @@ export const reservations = {
     });
   },
 };
-
 /* --------------------------- serie ricorrenti --------------------------- */
 
 export type SeriesScope = "this" | "future" | "all";
@@ -1077,7 +1075,7 @@ export const series = {
     if (toMin(draft.end) <= toMin(draft.start))
       return { ok: false, error: "L'orario di fine deve seguire quello di inizio" };
     if (rule.until < draft.date)
-      return { ok: false, error: "La data di fine precede la data di inizio" };
+      return { ok: false, error: "La data di fine precede quella di inizio" };
 
     const prev = series.preview(draft, rule);
     if (!prev.length)
