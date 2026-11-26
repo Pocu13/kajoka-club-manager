@@ -1,4 +1,3 @@
-
 import { createFileRoute } from "@tanstack/react-router";
 import { useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
@@ -353,7 +352,6 @@ function BookingsPage() {
                         )}
                         style={{ left: left + 2, width: width - 4 }}
                       >
-
                         <span className="mono flex items-center gap-1 text-[10px] font-bold opacity-90">
                           {b.seriesId && <Repeat className="size-3" />}
                           {b.start} → {b.end}
@@ -448,7 +446,7 @@ function BookingsPage() {
         subtitle="Consultazione disponibilità"
         width="w-[400px]"
       >
-        {pastSlot && (
+                {pastSlot && (
           <div className="space-y-4">
             <Badge tone="neutral">NON PRENOTABILE</Badge>
             <Panel className="space-y-3 p-4">
@@ -704,7 +702,6 @@ function BookingForm({
                   <Select value={freq} onChange={(e) => setFreq(e.target.value as RecurrenceFreq)}>
                     {(Object.keys(FREQ_LABEL) as RecurrenceFreq[]).map((f) => (
                       <option key={f} value={f}>{FREQ_LABEL[f]}</option>
-
                     ))}
                   </Select>
                 </Field>
@@ -794,7 +791,6 @@ function Row({ label, value }: { label: string; value: string }) {
     </div>
   );
 }
-
 function BookingDetail({
   booking,
   onClose,
@@ -935,8 +931,6 @@ function BookingDetail({
   const cashAmount =
     Number(payCash.replace(",", ".")) || 0;
 
-  // Aggiungere o rimuovere giocatori non modifica
-  // le quote già assegnate agli altri partecipanti.
   const updateParticipants = (next: Player[]) => {
     setParticipants(next);
   };
@@ -999,10 +993,14 @@ function BookingDetail({
   };
 
   const removeParticipant = (playerId: string) => {
+    const playerToRemove = participants.find(
+      (player) => player.id === playerId,
+    );
+
     if (
       fixedParticipants ||
       participants.length <= 2 ||
-      participants.some((p) => p.paid)
+      playerToRemove?.paid
     ) {
       return;
     }
@@ -1059,8 +1057,6 @@ function BookingDetail({
       return;
     }
 
-    // Salva prima le quote aggiornate e il prezzo
-    // della prenotazione. Solo dopo registra il pagamento.
     const saved = reservations.update(booking.id, {
       participants,
       players: participants.map(
@@ -1123,7 +1119,7 @@ function BookingDetail({
         title={booking.title}
         subtitle={`${court?.name ?? "Campo"} · ${booking.start} → ${booking.end}`}
         footer={
-          canCancel && !booking.cancelled ? (
+          !booking.cancelled ? (
             <div className="grid grid-cols-2 gap-2">
               {editing ? (
                 <Btn
@@ -1141,12 +1137,21 @@ function BookingDetail({
                 </Btn>
               )}
 
-              <Btn
-                variant="danger"
-                onClick={() => setConfirm(true)}
-              >
-                <Trash2 className="size-4" /> Annulla
-              </Btn>
+              {canCancel ? (
+                <Btn
+                  variant="danger"
+                  onClick={() => setConfirm(true)}
+                >
+                  <Trash2 className="size-4" /> Annulla
+                </Btn>
+              ) : (
+                <Btn
+                  variant="outline"
+                  onClick={onClose}
+                >
+                  Chiudi
+                </Btn>
+              )}
             </div>
           ) : undefined
         }
@@ -1297,7 +1302,7 @@ function BookingDetail({
             </Panel>
           )}
 
-          <Panel className="space-y-2 p-4">
+          <Panel className="space-y-3 p-4">
             <Row
               label="Campo"
               value={court?.name ?? "—"}
@@ -1306,29 +1311,26 @@ function BookingDetail({
               label="Orario"
               value={`${booking.start} → ${booking.end}`}
             />
-            <Row
-              label="Totale"
-              value={eur(booking.price)}
-            />
 
-            {!editing && (
-              <Btn
-                variant="outline"
-                size="sm"
-                className="w-full"
-                onClick={() => setEditing(true)}
-              >
-                Modifica prezzo e orario
-              </Btn>
-            )}
+            <Field label="Prezzo totale prenotazione (€)">
+              <Input
+                type="number"
+                min="0"
+                step="0.01"
+                value={bookingPriceValue}
+                disabled={booking.cancelled}
+                onChange={(event) =>
+                  setBookingPriceValue(event.target.value)
+                }
+              />
+            </Field>
 
             <Row
               label="Creata da"
               value={booking.createdBy}
             />
           </Panel>
-
-          {!booking.cancelled &&
+                    {!booking.cancelled &&
             booking.kind !== "manutenzione" && (
               <WhatsAppShare
                 title="Condividi su WhatsApp"
@@ -1431,9 +1433,7 @@ function BookingDetail({
 
                   {!fixedParticipants &&
                     participants.length > 2 &&
-                    !participants.some(
-                      (item) => item.paid,
-                    ) &&
+                    !player.paid &&
                     !booking.cancelled && (
                       <button
                         type="button"
@@ -1458,23 +1458,23 @@ function BookingDetail({
                   : "Tennis: da 2 a 4 partecipanti."}{" "}
               Le quote sono modificabili singolarmente e
               non cambiano quando aggiungi o rimuovi
-              partecipanti.
+              partecipanti. I giocatori già pagati restano bloccati.
             </p>
 
             {!booking.cancelled && (
               <Btn
-                variant="outline"
+                variant="primary"
                 size="sm"
                 className="mt-2 w-full"
                 onClick={() => {
                   if (saveParticipants()) {
                     toast.success(
-                      "Partecipanti e quote salvati",
+                      "Prezzo, partecipanti e quote salvati",
                     );
                   }
                 }}
               >
-                Salva partecipanti
+                Salva prezzo e quote
               </Btn>
             )}
           </div>
@@ -1707,6 +1707,7 @@ function BookingDetail({
     </>
   );
 }
+
 const WEEKDAYS = ["domenica", "lunedì", "martedì", "mercoledì", "giovedì", "venerdì", "sabato"];
 
 function AiAssistant({ onExtract }: { onExtract: (init: FormInit) => void }) {
