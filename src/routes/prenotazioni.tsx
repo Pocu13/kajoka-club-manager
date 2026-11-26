@@ -818,6 +818,7 @@ function BookingDetail({
   const [payIds, setPayIds] = useState<string[]>([]);
   const [payMethod, setPayMethod] = useState<"contanti" | "carta" | "misto">("carta");
   const [payCash, setPayCash] = useState("0");
+  const [bookingPriceValue, setBookingPriceValue] = useState("0");
 
   useEffect(() => {
     if (!booking) return;
@@ -826,16 +827,24 @@ function BookingDetail({
     setEStart(booking.start);
     setEDur(toMin(booking.end) - toMin(booking.start));
     setECourt(booking.courtId);
+    setBookingPriceValue(String(booking.price));
 
     const courtType = db.courts.find((c) => c.id === booking.courtId)?.type;
     const isPadel = courtType === "padel";
     const maxParticipants = courtType === "beach" ? 12 : 4;
     const count = isPadel
       ? 4
-      : Math.max(2, Math.min(maxParticipants, booking.participants?.length || booking.players.length || 2));
+      : Math.max(
+          2,
+          Math.min(
+            maxParticipants,
+            booking.participants?.length || booking.players.length || 2,
+          ),
+        );
 
     const initialPlayers: Player[] = Array.from({ length: count }, (_, index) => {
       const existing = booking.participants?.[index];
+
       return existing
         ? { ...existing, extras: [...(existing.extras ?? [])] }
         : {
@@ -855,32 +864,58 @@ function BookingDetail({
   if (!booking) return null;
 
   const seriesCount = booking.seriesId
-    ? db.bookings.filter((b) => b.seriesId === booking.seriesId && !b.cancelled).length
+    ? db.bookings.filter(
+        (b) => b.seriesId === booking.seriesId && !b.cancelled,
+      ).length
     : 0;
 
+  const bookingPriceNumber = Number(
+    bookingPriceValue.replace(",", "."),
+  );
+
   const saveEdit = () => {
-    const c = db.courts.find((x) => x.id === eCourt);
-    if (!c) return;
-    const end = toHHMM(Math.min(OPEN_TO, toMin(eStart) + eDur));
+    if (
+      !Number.isFinite(bookingPriceNumber) ||
+      bookingPriceNumber < 0
+    ) {
+      toast.error("Inserisci un prezzo totale valido.");
+      return;
+    }
+
+    const end = toHHMM(
+      Math.min(OPEN_TO, toMin(eStart) + eDur),
+    );
+
     const r = series.update(
       booking.id,
-      { courtId: eCourt, start: eStart, end, price: bookingPrice(c, eDur, booking.extras) },
+      {
+        courtId: eCourt,
+        start: eStart,
+        end,
+        price: Math.round(bookingPriceNumber * 100) / 100,
+      },
       booking.seriesId ? scope : "this",
     );
+
     if (!r.ok) {
       toast.error(r.error ?? "Modifica non riuscita");
       return;
     }
+
     toast.success(`Aggiornati ${r.updated} blocchi`);
     setEditing(false);
   };
 
-  const court = db.courts.find((c) => c.id === booking.courtId);
+  const court = db.courts.find(
+    (c) => c.id === booking.courtId,
+  );
+
   const fixedParticipants = court?.type === "padel";
   const participantLimit = court?.type === "beach" ? 12 : 4;
 
   const selectedPlayers = participants.filter(
-    (player) => payIds.includes(player.id) && !player.paid,
+    (player) =>
+      payIds.includes(player.id) && !player.paid,
   );
 
   const payTotal = Math.round(
@@ -888,43 +923,68 @@ function BookingDetail({
       (sum, player) =>
         sum +
         player.quota +
-        player.extras.reduce((extraSum, extra) => extraSum + extra.price * extra.qty, 0),
+        player.extras.reduce(
+          (extraSum, extra) =>
+            extraSum + extra.price * extra.qty,
+          0,
+        ),
       0,
     ) * 100,
   ) / 100;
 
-  const cashAmount = Number(payCash.replace(",", ".")) || 0;
+  const cashAmount =
+    Number(payCash.replace(",", ".")) || 0;
 
+  // Aggiungere o rimuovere giocatori non modifica
+  // le quote già assegnate agli altri partecipanti.
   const updateParticipants = (next: Player[]) => {
-    const quota = Math.round((booking.price / Math.max(1, next.length)) * 100) / 100;
-    setParticipants(
-      next.map((player, index) => ({
-        ...player,
-        quota:
-          index === next.length - 1
-            ? Math.round((booking.price - quota * (next.length - 1)) * 100) / 100
-            : quota,
-      })),
-    );
+    setParticipants(next);
   };
 
   const saveParticipants = () => {
-    const names = participants.map((player) => player.name.trim());
+    const names = participants.map(
+      (player) => player.name.trim(),
+    );
+
     if (names.some((name) => !name)) {
-      toast.error("Inserisci il nome di tutti i partecipanti.");
+      toast.error(
+        "Inserisci il nome di tutti i partecipanti.",
+      );
       return false;
     }
 
-    const result = reservations.update(booking.id, { participants, players: names });
-    if (!result.ok) {
-      toast.error(result.error ?? "Impossibile salvare i partecipanti");
+    const price = Number(
+      bookingPriceValue.replace(",", "."),
+    );
+
+    if (!Number.isFinite(price) || price < 0) {
+      toast.error("Inserisci un prezzo totale valido.");
       return false;
     }
+
+    const result = reservations.update(booking.id, {
+      participants,
+      players: names,
+      price: Math.round(price * 100) / 100,
+    });
+
+    if (!result.ok) {
+      toast.error(
+        result.error ?? "Impossibile salvare i partecipanti",
+      );
+      return false;
+    }
+
     return true;
   };
 
   const addParticipant = () => {
-    if (participants.length >= participantLimit || fixedParticipants) return;
+    if (
+      participants.length >= participantLimit ||
+      fixedParticipants
+    ) {
+      return;
+    }
 
     updateParticipants([
       ...participants,
@@ -939,33 +999,80 @@ function BookingDetail({
   };
 
   const removeParticipant = (playerId: string) => {
-    if (fixedParticipants || participants.length <= 2 || participants.some((p) => p.paid)) return;
-    updateParticipants(participants.filter((player) => player.id !== playerId));
+    if (
+      fixedParticipants ||
+      participants.length <= 2 ||
+      participants.some((p) => p.paid)
+    ) {
+      return;
+    }
+
+    updateParticipants(
+      participants.filter(
+        (player) => player.id !== playerId,
+      ),
+    );
   };
 
   const submitPrepayment = () => {
     if (!payIds.length) {
-      toast.error("Seleziona almeno un partecipante da pagare.");
+      toast.error(
+        "Seleziona almeno un partecipante da pagare.",
+      );
       return;
     }
 
-    if (participants.some((player) => !player.name.trim())) {
-      toast.error("Inserisci il nome di tutti i partecipanti.");
+    if (
+      participants.some(
+        (player) => !player.name.trim(),
+      )
+    ) {
+      toast.error(
+        "Inserisci il nome di tutti i partecipanti.",
+      );
       return;
     }
 
-    if (payMethod === "misto" && (cashAmount < 0 || cashAmount > payTotal)) {
-      toast.error("Controlla la ripartizione tra contanti e carta.");
+    const price = Number(
+      bookingPriceValue.replace(",", "."),
+    );
+
+    if (!Number.isFinite(price) || price < 0) {
+      toast.error("Inserisci un prezzo totale valido.");
       return;
     }
 
+    if (payTotal <= 0) {
+      toast.error(
+        "Il totale del pagamento deve essere maggiore di zero.",
+      );
+      return;
+    }
+
+    if (
+      payMethod === "misto" &&
+      (cashAmount < 0 || cashAmount > payTotal)
+    ) {
+      toast.error(
+        "Controlla la ripartizione tra contanti e carta.",
+      );
+      return;
+    }
+
+    // Salva prima le quote aggiornate e il prezzo
+    // della prenotazione. Solo dopo registra il pagamento.
     const saved = reservations.update(booking.id, {
       participants,
-      players: participants.map((player) => player.name.trim()),
+      players: participants.map(
+        (player) => player.name.trim(),
+      ),
+      price: Math.round(price * 100) / 100,
     });
 
     if (!saved.ok) {
-      toast.error(saved.error ?? "Impossibile salvare i partecipanti");
+      toast.error(
+        saved.error ?? "Impossibile salvare i partecipanti",
+      );
       return;
     }
 
@@ -973,7 +1080,11 @@ function BookingDetail({
       booking.id,
       payIds,
       payMethod,
-      payMethod === "misto" ? cashAmount : payMethod === "contanti" ? payTotal : 0,
+      payMethod === "misto"
+        ? cashAmount
+        : payMethod === "contanti"
+          ? payTotal
+          : 0,
       payMethod === "misto"
         ? Math.round((payTotal - cashAmount) * 100) / 100
         : payMethod === "carta"
@@ -982,17 +1093,24 @@ function BookingDetail({
     );
 
     if (!result.ok) {
-      toast.error(result.error ?? "Pagamento non riuscito");
+      toast.error(
+        result.error ?? "Pagamento non riuscito",
+      );
       return;
     }
 
     setParticipants((current) =>
       current.map((player) =>
-        payIds.includes(player.id) ? { ...player, paid: true } : player,
+        payIds.includes(player.id)
+          ? { ...player, paid: true }
+          : player,
       ),
     );
 
-    toast.success(`Pagamento anticipato registrato: ${eur(payTotal)}`);
+    toast.success(
+      `Pagamento anticipato registrato: ${eur(payTotal)}`,
+    );
+
     setPayOpen(false);
     setPayIds([]);
   };
@@ -1008,13 +1126,25 @@ function BookingDetail({
           canCancel && !booking.cancelled ? (
             <div className="grid grid-cols-2 gap-2">
               {editing ? (
-                <Btn variant="primary" onClick={saveEdit}>Salva modifiche</Btn>
+                <Btn
+                  variant="primary"
+                  onClick={saveEdit}
+                >
+                  Salva modifiche
+                </Btn>
               ) : (
-                <Btn variant="outline" onClick={() => setEditing(true)}>
+                <Btn
+                  variant="outline"
+                  onClick={() => setEditing(true)}
+                >
                   <Pencil className="size-4" /> Modifica
                 </Btn>
               )}
-              <Btn variant="danger" onClick={() => setConfirm(true)}>
+
+              <Btn
+                variant="danger"
+                onClick={() => setConfirm(true)}
+              >
                 <Trash2 className="size-4" /> Annulla
               </Btn>
             </div>
@@ -1023,46 +1153,79 @@ function BookingDetail({
       >
         <div className="space-y-4">
           <div className="flex w-full flex-wrap items-center gap-2">
-            <Badge tone={booking.cancelled ? "danger" : "primary"}>
-              {booking.cancelled ? "ANNULLATA" : KIND_LABEL[booking.kind].toUpperCase()}
+            <Badge
+              tone={
+                booking.cancelled ? "danger" : "primary"
+              }
+            >
+              {booking.cancelled
+                ? "ANNULLATA"
+                : KIND_LABEL[booking.kind].toUpperCase()}
             </Badge>
-            <Badge tone="neutral">{booking.date}</Badge>
-            {booking.source === "ai" && <Badge tone="info">DA AI</Badge>}
 
-            {canPrepay && participants.some((player) => !player.paid) && (
-              <Btn
-                variant="primary"
-                size="sm"
-                className="ml-auto"
-                onClick={() => {
-                  setPayIds(
-                    participants.filter((player) => !player.paid).map((player) => player.id),
-                  );
-                  setPayMethod("carta");
-                  setPayCash("0");
-                  setPayOpen(true);
-                }}
-              >
-                <Euro className="size-4" /> PAGA
-              </Btn>
+            <Badge tone="neutral">
+              {booking.date}
+            </Badge>
+
+            {booking.source === "ai" && (
+              <Badge tone="info">DA AI</Badge>
             )}
+
+            {canPrepay &&
+              participants.some(
+                (player) => !player.paid,
+              ) && (
+                <Btn
+                  variant="primary"
+                  size="sm"
+                  className="ml-auto"
+                  onClick={() => {
+                    setPayIds(
+                      participants
+                        .filter((player) => !player.paid)
+                        .map((player) => player.id),
+                    );
+                    setPayMethod("carta");
+                    setPayCash("0");
+                    setPayOpen(true);
+                  }}
+                >
+                  <Euro className="size-4" /> PAGA
+                </Btn>
+              )}
           </div>
 
           {booking.seriesId && booking.recurrence && (
             <Panel className="space-y-2 p-4">
               <div className="flex items-center gap-2 text-sm font-semibold">
-                <Repeat className="size-4 text-primary" /> Serie ricorrente · {seriesCount} blocchi attivi
+                <Repeat className="size-4 text-primary" />
+                Serie ricorrente · {seriesCount} blocchi attivi
               </div>
-              <div className="mono text-xs text-muted-foreground">
-                {FREQ_LABEL[booking.recurrence.freq]} fino al {booking.recurrence.until}
 
-                {booking.recurrence.exceptions.length > 0 && ` · eccezioni: ${booking.recurrence.exceptions.join(", ")}`}
+              <div className="mono text-xs text-muted-foreground">
+                {FREQ_LABEL[booking.recurrence.freq]} fino al{" "}
+                {booking.recurrence.until}
+
+                {booking.recurrence.exceptions.length > 0 &&
+                  ` · eccezioni: ${booking.recurrence.exceptions.join(", ")}`}
               </div>
+
               <Field label="Applica modifiche / annullamento a">
-                <Select value={scope} onChange={(e) => setScope(e.target.value as SeriesScope)}>
-                  <option value="this">Solo questo blocco</option>
-                  <option value="future">Questo e i successivi</option>
-                  <option value="all">Tutta la serie</option>
+                <Select
+                  value={scope}
+                  onChange={(e) =>
+                    setScope(e.target.value as SeriesScope)
+                  }
+                >
+                  <option value="this">
+                    Solo questo blocco
+                  </option>
+                  <option value="future">
+                    Questo e i successivi
+                  </option>
+                  <option value="all">
+                    Tutta la serie
+                  </option>
                 </Select>
               </Field>
             </Panel>
@@ -1070,48 +1233,129 @@ function BookingDetail({
 
           {editing && (
             <Panel className="space-y-3 p-4">
+              <Field label="Prezzo totale prenotazione (€)">
+                <Input
+                  type="number"
+                  min="0"
+                  step="0.01"
+                  value={bookingPriceValue}
+                  onChange={(event) =>
+                    setBookingPriceValue(event.target.value)
+                  }
+                />
+              </Field>
+
               <Field label="Campo">
-                <Select value={eCourt} onChange={(e) => setECourt(e.target.value)}>
-                  {db.courts.filter((c) => c.active).map((c) => (
-                    <option key={c.id} value={c.id}>{c.name}</option>
-                  ))}
+                <Select
+                  value={eCourt}
+                  onChange={(e) =>
+                    setECourt(e.target.value)
+                  }
+                >
+                  {db.courts
+                    .filter((c) => c.active)
+                    .map((c) => (
+                      <option key={c.id} value={c.id}>
+                        {c.name}
+                      </option>
+                    ))}
                 </Select>
               </Field>
+
               <div className="grid grid-cols-2 gap-3">
                 <Field label="Ora inizio">
-                  <Input type="time" step={1800} value={eStart} onChange={(e) => setEStart(e.target.value)} />
+                  <Input
+                    type="time"
+                    step={1800}
+                    value={eStart}
+                    onChange={(e) =>
+                      setEStart(e.target.value)
+                    }
+                  />
                 </Field>
+
                 <Field label="Durata">
-                  <Select value={eDur} onChange={(e) => setEDur(Number(e.target.value))}>
-                    {[60, 90, 120].map((m) => <option key={m} value={m}>{m} min</option>)}
+                  <Select
+                    value={eDur}
+                    onChange={(e) =>
+                      setEDur(Number(e.target.value))
+                    }
+                  >
+                    {[60, 90, 120].map((m) => (
+                      <option key={m} value={m}>
+                        {m} min
+                      </option>
+                    ))}
                   </Select>
                 </Field>
               </div>
+
               <p className="text-xs text-muted-foreground">
-                Se anche un solo blocco va in conflitto, nessuna modifica viene applicata.
+                Se anche un solo blocco va in conflitto,
+                nessuna modifica viene applicata.
               </p>
             </Panel>
           )}
 
           <Panel className="space-y-2 p-4">
-            <Row label="Campo" value={court?.name ?? "—"} />
-            <Row label="Orario" value={`${booking.start} → ${booking.end}`} />
-            <Row label="Totale" value={eur(booking.price)} />
-            <Row label="Creata da" value={booking.createdBy} />
+            <Row
+              label="Campo"
+              value={court?.name ?? "—"}
+            />
+            <Row
+              label="Orario"
+              value={`${booking.start} → ${booking.end}`}
+            />
+            <Row
+              label="Totale"
+              value={eur(booking.price)}
+            />
+
+            {!editing && (
+              <Btn
+                variant="outline"
+                size="sm"
+                className="w-full"
+                onClick={() => setEditing(true)}
+              >
+                Modifica prezzo e orario
+              </Btn>
+            )}
+
+            <Row
+              label="Creata da"
+              value={booking.createdBy}
+            />
           </Panel>
 
-          {!booking.cancelled && booking.kind !== "manutenzione" && (
-            <WhatsAppShare title="Condividi su WhatsApp" text={bookingMessage(booking, court?.name ?? "Campo")} />
-          )}
+          {!booking.cancelled &&
+            booking.kind !== "manutenzione" && (
+              <WhatsAppShare
+                title="Condividi su WhatsApp"
+                text={bookingMessage(
+                  booking,
+                  court?.name ?? "Campo",
+                )}
+              />
+            )}
 
           <div>
             <div className="mb-2 flex items-center justify-between gap-2">
-              <div className="label-caps text-muted-foreground">Giocatori e quote</div>
+              <div className="label-caps text-muted-foreground">
+                Giocatori e quote
+              </div>
+
               {!fixedParticipants &&
                 participants.length < participantLimit &&
-                !participants.some((player) => player.paid) &&
+                !participants.some(
+                  (player) => player.paid,
+                ) &&
                 !booking.cancelled && (
-                  <Btn variant="outline" size="sm" onClick={addParticipant}>
+                  <Btn
+                    variant="outline"
+                    size="sm"
+                    onClick={addParticipant}
+                  >
                     <Plus className="size-3" /> Aggiungi
                   </Btn>
                 )}
@@ -1126,34 +1370,78 @@ function BookingDetail({
                   <span className="mono flex size-6 shrink-0 items-center justify-center rounded-full bg-primary/20 text-[11px] text-primary">
                     {index + 1}
                   </span>
+
                   <Input
                     value={player.name}
                     placeholder={`Giocatore ${index + 1}`}
-                    disabled={player.paid || booking.cancelled}
+                    disabled={
+                      player.paid || booking.cancelled
+                    }
                     onChange={(event) =>
                       setParticipants((current) =>
                         current.map((item) =>
-                          item.id === player.id ? { ...item, name: event.target.value } : item,
+                          item.id === player.id
+                            ? {
+                                ...item,
+                                name: event.target.value,
+                              }
+                            : item,
                         ),
                       )
                     }
                     className="min-w-0"
                   />
-                  <span className="mono shrink-0 text-xs">{eur(player.quota)}</span>
+
+                  <div className="w-24 shrink-0">
+                    <Input
+                      type="number"
+                      min="0"
+                      step="0.01"
+                      value={String(player.quota)}
+                      disabled={
+                        player.paid || booking.cancelled
+                      }
+                      onChange={(event) =>
+                        setParticipants((current) =>
+                          current.map((item) =>
+                            item.id === player.id
+                              ? {
+                                  ...item,
+                                  quota: Math.max(
+                                    0,
+                                    Number(event.target.value) || 0,
+                                  ),
+                                }
+                              : item,
+                          ),
+                        )
+                      }
+                    />
+                  </div>
+
                   {player.paid ? (
-                    <Badge tone="success">PAGATO</Badge>
+                    <Badge tone="success">
+                      PAGATO
+                    </Badge>
                   ) : (
-                    <Badge tone="warning">DA PAGARE</Badge>
+                    <Badge tone="warning">
+                      DA PAGARE
+                    </Badge>
                   )}
+
                   {!fixedParticipants &&
                     participants.length > 2 &&
-                    !participants.some((item) => item.paid) &&
+                    !participants.some(
+                      (item) => item.paid,
+                    ) &&
                     !booking.cancelled && (
                       <button
                         type="button"
                         className="rounded p-1 text-muted-foreground hover:text-destructive"
                         title="Rimuovi giocatore"
-                        onClick={() => removeParticipant(player.id)}
+                        onClick={() =>
+                          removeParticipant(player.id)
+                        }
                       >
                         <Trash2 className="size-4" />
                       </button>
@@ -1168,7 +1456,9 @@ function BookingDetail({
                 : court?.type === "beach"
                   ? "Beach: da 2 a 12 partecipanti."
                   : "Tennis: da 2 a 4 partecipanti."}{" "}
-              Quota campo ripartita tra i partecipanti.
+              Le quote sono modificabili singolarmente e
+              non cambiano quando aggiungi o rimuovi
+              partecipanti.
             </p>
 
             {!booking.cancelled && (
@@ -1177,7 +1467,11 @@ function BookingDetail({
                 size="sm"
                 className="mt-2 w-full"
                 onClick={() => {
-                  if (saveParticipants()) toast.success("Partecipanti e quote salvati");
+                  if (saveParticipants()) {
+                    toast.success(
+                      "Partecipanti e quote salvati",
+                    );
+                  }
                 }}
               >
                 Salva partecipanti
@@ -1187,11 +1481,15 @@ function BookingDetail({
 
           {booking.extras.length > 0 && (
             <div>
-              <div className="label-caps mb-2 text-muted-foreground">Extra</div>
+              <div className="label-caps mb-2 text-muted-foreground">
+                Extra
+              </div>
+
               <div className="flex flex-wrap gap-2">
                 {booking.extras.map((id) => (
                   <Badge key={id} tone="info">
-                    {EXTRAS.find((e) => e.id === id)?.label ?? id}
+                    {EXTRAS.find((e) => e.id === id)?.label ??
+                      id}
                   </Badge>
                 ))}
               </div>
@@ -1199,7 +1497,9 @@ function BookingDetail({
           )}
 
           {booking.note && (
-            <p className="text-sm text-muted-foreground">Note: {booking.note}</p>
+            <p className="text-sm text-muted-foreground">
+              Note: {booking.note}
+            </p>
           )}
         </div>
       </Drawer>
@@ -1210,15 +1510,21 @@ function BookingDetail({
         title="Pagamento anticipato"
         footer={
           <>
-            <Btn variant="outline" onClick={() => setPayOpen(false)}>
+            <Btn
+              variant="outline"
+              onClick={() => setPayOpen(false)}
+            >
               Annulla
             </Btn>
+
             <Btn
               variant="primary"
               disabled={
                 !payIds.length ||
                 payTotal <= 0 ||
-                (payMethod === "misto" && (cashAmount < 0 || cashAmount > payTotal))
+                (payMethod === "misto" &&
+                  (cashAmount < 0 ||
+                    cashAmount > payTotal))
               }
               onClick={submitPrepayment}
             >
@@ -1229,7 +1535,8 @@ function BookingDetail({
       >
         <div className="space-y-4">
           <p className="text-sm text-muted-foreground">
-            Seleziona i partecipanti che saldano ora. La prenotazione rimane confermata fino
+            Seleziona i partecipanti che saldano ora.
+            La prenotazione rimane confermata fino
             all'orario di inizio.
           </p>
 
@@ -1247,15 +1554,52 @@ function BookingDetail({
                     setPayIds((current) =>
                       event.target.checked
                         ? [...current, player.id]
-                        : current.filter((id) => id !== player.id),
+                        : current.filter(
+                            (id) => id !== player.id,
+                          ),
                     )
                   }
                 />
+
                 <span className="min-w-0 flex-1 text-sm">
                   {player.name || "Nome da inserire"}
                 </span>
-                <span className="mono text-sm">{eur(player.quota)}</span>
-                {player.paid && <Badge tone="success">PAGATO</Badge>}
+
+                <div
+                  className="w-24 shrink-0"
+                  onClick={(event) =>
+                    event.stopPropagation()
+                  }
+                >
+                  <Input
+                    type="number"
+                    min="0"
+                    step="0.01"
+                    value={String(player.quota)}
+                    disabled={player.paid}
+                    onChange={(event) =>
+                      setParticipants((current) =>
+                        current.map((item) =>
+                          item.id === player.id
+                            ? {
+                                ...item,
+                                quota: Math.max(
+                                  0,
+                                  Number(event.target.value) || 0,
+                                ),
+                              }
+                            : item,
+                        ),
+                      )
+                    }
+                  />
+                </div>
+
+                {player.paid && (
+                  <Badge tone="success">
+                    PAGATO
+                  </Badge>
+                )}
               </label>
             ))}
           </div>
@@ -1264,12 +1608,23 @@ function BookingDetail({
             <Select
               value={payMethod}
               onChange={(event) =>
-                setPayMethod(event.target.value as "contanti" | "carta" | "misto")
+                setPayMethod(
+                  event.target.value as
+                    | "contanti"
+                    | "carta"
+                    | "misto",
+                )
               }
             >
-              <option value="contanti">Contanti</option>
-              <option value="carta">Carta / POS</option>
-              <option value="misto">Misto</option>
+              <option value="contanti">
+                Contanti
+              </option>
+              <option value="carta">
+                Carta / POS
+              </option>
+              <option value="misto">
+                Misto
+              </option>
             </Select>
           </Field>
 
@@ -1281,17 +1636,28 @@ function BookingDetail({
                 max={payTotal}
                 step="0.01"
                 value={payCash}
-                onChange={(event) => setPayCash(event.target.value)}
+                onChange={(event) =>
+                  setPayCash(event.target.value)
+                }
               />
+
               <p className="text-xs text-muted-foreground">
-                Carta: {eur(Math.max(0, payTotal - cashAmount))}
+                Carta:{" "}
+                {eur(
+                  Math.max(0, payTotal - cashAmount),
+                )}
               </p>
             </Field>
           )}
 
           <Panel className="flex items-center justify-between p-3">
-            <span className="label-caps text-muted-foreground">Totale selezionato</span>
-            <span className="mono text-xl font-bold">{eur(payTotal)}</span>
+            <span className="label-caps text-muted-foreground">
+              Totale selezionato
+            </span>
+
+            <span className="mono text-xl font-bold">
+              {eur(payTotal)}
+            </span>
           </Panel>
         </div>
       </Modal>
@@ -1302,14 +1668,27 @@ function BookingDetail({
         title="Annulla prenotazione"
         footer={
           <>
-            <Btn variant="outline" onClick={() => setConfirm(false)}>
+            <Btn
+              variant="outline"
+              onClick={() => setConfirm(false)}
+            >
               Indietro
             </Btn>
+
             <Btn
               variant="danger"
               onClick={() => {
-                const n = series.cancel(booking.id, booking.seriesId ? scope : "this");
-                toast.success(n > 1 ? `${n} blocchi annullati` : "Prenotazione annullata, slot liberato");
+                const n = series.cancel(
+                  booking.id,
+                  booking.seriesId ? scope : "this",
+                );
+
+                toast.success(
+                  n > 1
+                    ? `${n} blocchi annullati`
+                    : "Prenotazione annullata, slot liberato",
+                );
+
                 setConfirm(false);
                 onClose();
               }}
@@ -1320,14 +1699,14 @@ function BookingDetail({
         }
       >
         <p className="text-sm text-muted-foreground">
-          Lo slot {booking.start}–{booking.end} su {court?.name} tornerà disponibile e la mappa
+          Lo slot {booking.start}–{booking.end} su{" "}
+          {court?.name} tornerà disponibile e la mappa
           dei campi si aggiornerà al blocco successivo.
         </p>
       </Modal>
     </>
   );
 }
-
 const WEEKDAYS = ["domenica", "lunedì", "martedì", "mercoledì", "giovedì", "venerdì", "sabato"];
 
 function AiAssistant({ onExtract }: { onExtract: (init: FormInit) => void }) {
