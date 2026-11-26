@@ -1,3 +1,4 @@
+
 import { createFileRoute } from "@tanstack/react-router";
 import { useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
@@ -7,6 +8,7 @@ import { parseBookingRequest } from "@/lib/ai-booking.functions";
 import { AppShell } from "@/components/app-shell";
 import { SessionDrawer } from "@/components/session-drawer";
 import { WhatsAppShare } from "@/components/whatsapp-share";
+import { ExcelBookingImport } from "@/components/excel-booking-import";
 import { bookingMessage } from "@/lib/whatsapp";
 import { Badge, Btn, Drawer, Field, Input, Modal, Panel, Select } from "@/components/ui-kit";
 import { courtSessions, reservations, series, useCurrentUser, useDB, type SeriesScope } from "@/lib/store";
@@ -168,12 +170,15 @@ function BookingsPage() {
             tempo reale.
           </p>
         </div>
-        <Btn
-          variant="primary"
-          onClick={() => setForm({ courtId: courts[0]?.id ?? "", start: Math.max(OPEN_FROM, Math.floor(now / 30) * 30) })}
-        >
-          <CalendarPlus className="size-4" /> Nuova prenotazione
-        </Btn>
+        <div className="flex flex-wrap items-center gap-2">
+          <ExcelBookingImport />
+          <Btn
+            variant="primary"
+            onClick={() => setForm({ courtId: courts[0]?.id ?? "", start: Math.max(OPEN_FROM, Math.floor(now / 30) * 30) })}
+          >
+            <CalendarPlus className="size-4" /> Nuova prenotazione
+          </Btn>
+        </div>
       </div>
 
       <AiAssistant onExtract={(init) => setForm(init)} />
@@ -348,6 +353,7 @@ function BookingsPage() {
                         )}
                         style={{ left: left + 2, width: width - 4 }}
                       >
+
                         <span className="mono flex items-center gap-1 text-[10px] font-bold opacity-90">
                           {b.seriesId && <Repeat className="size-3" />}
                           {b.start} → {b.end}
@@ -698,6 +704,7 @@ function BookingForm({
                   <Select value={freq} onChange={(e) => setFreq(e.target.value as RecurrenceFreq)}>
                     {(Object.keys(FREQ_LABEL) as RecurrenceFreq[]).map((f) => (
                       <option key={f} value={f}>{FREQ_LABEL[f]}</option>
+
                     ))}
                   </Select>
                 </Field>
@@ -1048,6 +1055,7 @@ function BookingDetail({
               </div>
               <div className="mono text-xs text-muted-foreground">
                 {FREQ_LABEL[booking.recurrence.freq]} fino al {booking.recurrence.until}
+
                 {booking.recurrence.exceptions.length > 0 && ` · eccezioni: ${booking.recurrence.exceptions.join(", ")}`}
               </div>
               <Field label="Applica modifiche / annullamento a">
