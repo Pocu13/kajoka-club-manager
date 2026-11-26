@@ -869,9 +869,31 @@ function BookingDetail({
       ).length
     : 0;
 
+  
   const bookingPriceNumber = Number(
     bookingPriceValue.replace(",", "."),
   );
+
+  const saveBookingPrice = () => {
+    if (
+      !Number.isFinite(bookingPriceNumber) ||
+      bookingPriceNumber < 0
+    ) {
+      toast.error("Inserisci un prezzo totale valido.");
+      return;
+    }
+
+    const result = reservations.update(booking.id, {
+      price: Math.round(bookingPriceNumber * 100) / 100,
+    });
+
+    if (!result.ok) {
+      toast.error(result.error ?? "Impossibile salvare il prezzo");
+      return;
+    }
+
+    toast.success("Prezzo totale aggiornato");
+  };
 
   const saveEdit = () => {
     if (
