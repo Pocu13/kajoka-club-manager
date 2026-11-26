@@ -307,7 +307,6 @@ export const stock = {
     });
   },
 };
-
 /* -------------------------------- products -------------------------------- */
 
 export const catalog = {
@@ -597,8 +596,7 @@ export const courtSessions = {
       );
     });
   },
-
-  addExtra(sessionId: string, playerId: string, productId: string) {
+    addExtra(sessionId: string, playerId: string, productId: string) {
     set((d) => {
       const p = d.products.find((x) => x.id === productId);
       if (!p) return;
@@ -796,7 +794,8 @@ export const courtSessions = {
 
     return { ok: true };
   },
-    payPlayers(
+
+  payPlayers(
     sessionId: string,
     playerIds: string[],
     method: PaymentMethod,
@@ -874,8 +873,114 @@ export const courtSessions = {
       );
     });
   },
-};
 
+  /**
+   * Modifica esclusivamente i dettagli di una sessione conclusa.
+   * Le quote e i nomi dei giocatori pagati restano invariati.
+   * Le transazioni e i movimenti contabili non vengono toccati.
+   */
+  updateClosedDetails(
+    sessionId: string,
+    input: {
+      total: number;
+      players: Array<{
+        id: string;
+        name: string;
+        quota: number;
+      }>;
+    },
+  ): { ok: boolean; error?: string } {
+    const db = getDB();
+    const session = db.sessions.find((item) => item.id === sessionId);
+
+    if (!session) {
+      return { ok: false, error: "Partita non trovata." };
+    }
+
+    if (!session.closed) {
+      return {
+        ok: false,
+        error: "Puoi modificare da qui soltanto una partita conclusa.",
+      };
+    }
+
+    if (!Number.isFinite(input.total) || input.total < 0) {
+      return { ok: false, error: "Il prezzo totale non è valido." };
+    }
+
+    if (!Array.isArray(input.players)) {
+      return { ok: false, error: "Elenco giocatori non valido." };
+    }
+
+    const submittedIds = new Set<string>();
+
+    for (const item of input.players) {
+      if (!item || typeof item.id !== "string" || !item.id) {
+        return { ok: false, error: "Un giocatore non è valido." };
+      }
+
+      if (submittedIds.has(item.id)) {
+        return { ok: false, error: "Un giocatore è presente più di una volta." };
+      }
+
+      submittedIds.add(item.id);
+
+      const existingPlayer = session.players.find(
+        (player) => player.id === item.id,
+      );
+
+      if (!existingPlayer) {
+        return { ok: false, error: "Uno dei giocatori non appartiene a questa partita." };
+      }
+
+      if (existingPlayer.paid) {
+        continue;
+      }
+
+      if (typeof item.name !== "string") {
+        return { ok: false, error: "Il nome di un giocatore non è valido." };
+      }
+
+      if (!Number.isFinite(item.quota) || item.quota < 0) {
+        return { ok: false, error: "Una delle quote non è valida." };
+      }
+    }
+
+    set((d) => {
+      d.sessions = d.sessions.map((current) => {
+        if (current.id !== sessionId || !current.closed) {
+          return current;
+        }
+
+        return {
+          ...current,
+          total: round(input.total),
+          players: current.players.map((player) => {
+            if (player.paid) {
+              return player;
+            }
+
+            const updated = input.players.find(
+              (item) => item.id === player.id,
+            );
+
+            if (!updated) {
+              return player;
+            }
+
+            return {
+              ...player,
+              name: updated.name,
+              quota: round(updated.quota),
+            };
+          }),
+        };
+      });
+    });
+
+    return { ok: true };
+  },
+};
 /* ---------------------------------- users --------------------------------- */
 
 export const staff = {
