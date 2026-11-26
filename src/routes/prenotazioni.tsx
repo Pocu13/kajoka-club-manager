@@ -128,30 +128,63 @@ function BookingsPage() {
   const operationalCourt = operationalBooking
     ? db.courts.find((c) => c.id === operationalBooking.courtId) ?? null
     : null;
+
+  // Recupera la sessione collegata alla prenotazione anche se è conclusa.
   const operationalSession = operationalBooking
     ? db.sessions.find(
-        (session) => !session.closed && session.bookingId === operationalBooking.id,
+        (session) => session.bookingId === operationalBooking.id,
       ) ?? null
     : null;
 
   const openBooking = (booking: Booking) => {
     const todayKey = dateKey(new Date());
-    const isStartedBooking =
-      booking.date === todayKey &&
-      minutesNow() >= toMin(booking.start);
 
-    if (isStartedBooking && booking.kind !== "manutenzione") {
-      try {
-        courtSessions.checkIn(booking);
-        setDetail(null);
-        setOperationalBookingId(booking.id);
-      } catch (error) {
-        toast.error(error instanceof Error ? error.message : "Impossibile avviare la sessione");
-      }
+    // Se la prenotazione ha già una sessione, apre quella esistente.
+    // Vale sia per le sessioni attive sia per quelle concluse.
+    const linkedSession = db.sessions.find(
+      (session) => session.bookingId === booking.id,
+    );
+
+    if (linkedSession) {
+      setDetail(null);
+      setOperationalBookingId(booking.id);
       return;
     }
 
-    setDetail(booking.id);
+    const isPastBooking =
+      booking.date < todayKey ||
+      (booking.date === todayKey &&
+        minutesNow() >= toMin(booking.start));
+
+    // Una partita passata senza sessione viene solo consultata:
+    // non deve mai generare un nuovo check-in.
+    if (isPastBooking || booking.kind === "manutenzione") {
+      setOperationalBookingId(null);
+      setDetail(booking.id);
+      return;
+    }
+
+    // Se il campo è già occupato da un'altra sessione,
+    // evita di tentare un secondo check-in.
+    const activeCourtSession = db.sessions.find(
+      (session) =>
+        !session.closed &&
+        session.courtId === booking.courtId,
+    );
+
+    if (activeCourtSession) {
+      setOperationalBookingId(null);
+      setDetail(booking.id);
+      return;
+    }
+
+    try {
+      courtSessions.checkIn(booking);
+      setDetail(null);
+      setOperationalBookingId(booking.id);
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Impossibile avviare la sessione");
+    }
   };
 
   return (
@@ -475,7 +508,6 @@ function LegendDot({ cls, label }: { cls: string; label: string }) {
     </span>
   );
 }
-
 function BookingForm({
   open,
   onClose,
@@ -897,8 +929,7 @@ function BookingDetail({
       toast.error(r.error ?? "Modifica non riuscita");
       return;
     }
-
-    toast.success(`Aggiornati ${r.updated} blocchi`);
+        toast.success(`Aggiornati ${r.updated} blocchi`);
     setEditing(false);
   };
 
@@ -1348,7 +1379,7 @@ function BookingDetail({
               </div>
 
               {!fixedParticipants &&
-                participants.length < participantLimit &&
+                                participants.length < participantLimit &&
                 !participants.some(
                   (player) => player.paid,
                 ) &&
