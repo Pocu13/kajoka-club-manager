@@ -866,12 +866,20 @@ function BookingDetail({
     bookingPriceValue.replace(",", "."),
   );
 
+  
   const saveEdit = () => {
     if (
       !Number.isFinite(bookingPriceNumber) ||
       bookingPriceNumber < 0
     ) {
       toast.error("Inserisci un prezzo totale valido.");
+      return;
+    }
+
+    const names = participants.map((player) => player.name.trim());
+
+    if (names.some((name) => !name)) {
+      toast.error("Inserisci il nome di tutti i partecipanti.");
       return;
     }
 
@@ -894,9 +902,22 @@ function BookingDetail({
       toast.error(r.error ?? "Modifica non riuscita");
       return;
     }
-        toast.success(`Aggiornati ${r.updated} blocchi`);
+
+    const saved = reservations.update(booking.id, {
+      participants,
+      players: names,
+      price: Math.round(bookingPriceNumber * 100) / 100,
+    });
+
+    if (!saved.ok) {
+      toast.error(saved.error ?? "Impossibile salvare partecipanti e quote");
+      return;
+    }
+
+    toast.success(`Aggiornati ${r.updated} blocchi`);
     setEditing(false);
   };
+
 
   const court = db.courts.find(
     (c) => c.id === booking.courtId,
