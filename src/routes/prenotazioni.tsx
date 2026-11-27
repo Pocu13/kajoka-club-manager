@@ -496,8 +496,7 @@ function BookingsPage() {
         }}
       />
 
-      {pastSlot && (
-      
+     
       <SessionDrawer
         court={historicalCourt}
         session={historicalSession}
@@ -510,7 +509,9 @@ function BookingsPage() {
         onCheckIn={() => {}}
       />
 
+      {pastSlot && (
         <Modal
+
           open
           onClose={() => setPastSlot(null)}
           title="Slot non prenotabile"
