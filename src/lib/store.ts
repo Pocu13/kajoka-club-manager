@@ -1329,10 +1329,12 @@ export const courtSessions = {
    * Aggiorna una partita conclusa e registra le relative rettifiche.
    * Le transazioni originali non vengono mai modificate.
    */
-  updateClosedDetails(
+    updateClosedDetails(
     sessionId: string,
     input: {
       total: number;
+      paymentMethod: "contanti" | "carta" | "misto";
+      paymentCash: number;
       players: Array<{
         id: string;
         name: string;
