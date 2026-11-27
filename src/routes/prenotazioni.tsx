@@ -157,7 +157,7 @@ function BookingsPage() {
     const isBookingPast =
       booking.date < currentDate ||
       (booking.date === currentDate &&
-        toMin(booking.end) <= currentMinute);
+        toMin(booking.start) < currentMinute);
 
     if (isBookingPast) {
       setDetail(null);
@@ -496,9 +496,9 @@ function BookingsPage() {
         }}
       />
 
-     
+
       <SessionDrawer
-        court={historicalCourt}
+                court={historicalCourt}
         session={historicalSession}
         booking={historicalBooking}
         bookingOnly={false}
@@ -1498,7 +1498,7 @@ function BookingDetail({
                     value={eStart}
                     onChange={(event) => setEStart(event.target.value)}
                   />
-                </Field>
+                                  </Field>
 
                 <Field label="Durata">
                   <Select
