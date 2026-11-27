@@ -1159,7 +1159,20 @@ function BookingDetail({
             )}
 
           </div>
-
+          {!booking.cancelled &&
+            booking.kind !== "manutenzione" &&
+            isBookingInProgress && (
+              <Panel className="p-3">
+                <Toggle
+                  checked={false}
+                  onChange={(enabled) => {
+                    if (enabled) onPay();
+                  }}
+                  label="PAGA"
+                  hint="Apri la scheda operativa con quote, extra e pagamenti."
+                />
+              </Panel>
+            )}
           {booking.seriesId && booking.recurrence && (
             <Panel className="space-y-2 p-4">
               <div className="flex items-center gap-2 text-sm font-semibold">
