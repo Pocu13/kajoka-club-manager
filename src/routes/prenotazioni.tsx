@@ -84,6 +84,7 @@ function BookingsPage() {
   const [now, setNow] = useState(() => minutesNow());
   const [detail, setDetail] = useState<string | null>(null);
   const [operationalBookingId, setOperationalBookingId] = useState<string | null>(null);
+  const [historicalBookingId, setHistoricalBookingId] = useState<string | null>(null);
   const [form, setForm] = useState<FormInit | null>(null);
   const [pastSlot, setPastSlot] = useState<{
     courtName: string;
@@ -134,7 +135,20 @@ function BookingsPage() {
         (session) => session.bookingId === operationalBooking.id,
       ) ?? null
     : null;
+  const historicalBooking =
+    db.bookings.find(
+      (booking) => booking.id === historicalBookingId && !booking.cancelled,
+    ) ?? null;
 
+  const historicalCourt = historicalBooking
+    ? db.courts.find((court) => court.id === historicalBooking.courtId) ?? null
+    : null;
+
+  const historicalSession = historicalBooking
+    ? db.sessions.find(
+        (session) => session.bookingId === historicalBooking.id,
+      ) ?? null
+    : null;
   const openBooking = (booking: Booking) => {
     const linkedSession = db.sessions.find(
       (session) => session.bookingId === booking.id,
