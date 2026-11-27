@@ -1137,17 +1137,6 @@ function BookingDetail({
               <Badge tone="info">DA AI</Badge>
             )}
 
-                                       {!booking.cancelled &&
-              booking.kind === "partita" && (
-                <Btn
-                  variant="primary"
-                  size="sm"
-                  className="ml-auto"
-                  onClick={onActivate}
-                >
-                  ATTIVA PRENOTAZIONE
-                </Btn>
-              )}
           </div>
 
           {booking.seriesId && booking.recurrence && (
