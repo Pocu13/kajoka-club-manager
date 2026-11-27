@@ -501,7 +501,7 @@ function BookingsPage() {
         court={historicalCourt}
         session={historicalSession}
         booking={historicalBooking}
-        bookingOnly={!!historicalBooking && !historicalSession}
+        bookingOnly={false}
         displayOnly
         upcomingBooking={null}
         onClose={() => setHistoricalBookingId(null)}
