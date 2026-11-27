@@ -1214,14 +1214,30 @@ export function SessionDrawer({
                 const cashAmount =
                   method === "misto" ? Number(cash) || 0 : 0;
 
-                courtSessions.payPlayers(
-                  session.id,
-                  payIds,
-                  method,
-                  cashAmount,
-                  Math.max(0, payTotal - cashAmount),
-                  payQuotaTotal,
-                );
+                                if (bookingOnly && booking) {
+                  const result = courtSessions.payBookingPlayers(
+                    booking.id,
+                    payIds,
+                    method,
+                    cashAmount,
+                    Math.max(0, payTotal - cashAmount),
+                    payQuotaTotal,
+                  );
+
+                  if (!result.ok) {
+                    toast.error(result.error ?? "Errore durante l'incasso.");
+                    return;
+                  }
+                } else {
+                  courtSessions.payPlayers(
+                    session.id,
+                    payIds,
+                    method,
+                    cashAmount,
+                    Math.max(0, payTotal - cashAmount),
+                    payQuotaTotal,
+                  );
+                }
 
                 setPayOpen(false);
                 toast.success(`Incassati ${eur(payTotal)}`);
