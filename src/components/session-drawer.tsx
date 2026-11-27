@@ -173,7 +173,6 @@ export function SessionDrawer({
   }, 0);
 
   const parsedPayQuota = Number(payQuotaAmount.replace(",", "."));
-   const parsedPayQuota = Number(payQuotaAmount.replace(",", "."));
   const payQuotaTotal =
     payIds.length === 1 &&
     Number.isFinite(parsedPayQuota) &&
