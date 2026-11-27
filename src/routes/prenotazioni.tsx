@@ -1159,9 +1159,11 @@ function BookingDetail({
             )}
 
           </div>
-          {!booking.cancelled &&
-            booking.kind !== "manutenzione" &&
-            isBookingInProgress && (
+         {!booking.cancelled &&
+  booking.kind !== "manutenzione" &&
+  (booking.date > currentDate ||
+    (booking.date === currentDate &&
+      currentMinute < toMin(booking.start))) && (
               <Panel className="p-3">
                 <Toggle
                   checked={false}
