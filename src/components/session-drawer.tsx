@@ -395,6 +395,16 @@ export function SessionDrawer({
                       }
 
                       setPayIds(unpaid);
+                      setPayQuotaAmount(
+                String(
+        unpaid.reduce(
+        (sum, id) =>
+        sum +
+        (session.players.find((p) => p.id === id)?.quota ?? 0),
+      0,
+    ),
+  ),
+);
                       setMethod("contanti");
                       setCash("0");
                       setPayOpen(true);
