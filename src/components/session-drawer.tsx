@@ -1113,15 +1113,18 @@ export function SessionDrawer({
                   size="sm"
                   className="mt-3 w-full"
                   onClick={() => {
-                    courtSessions.updateQuotas(
-                      session.id,
-                      Object.fromEntries(
-                        Object.entries(quotaDraft).map(([key, value]) => [
-                          key,
-                          Number(value) || 0,
-                        ]),
-                      ),
+                                       const quotas = Object.fromEntries(
+                      Object.entries(quotaDraft).map(([key, value]) => [
+                        key,
+                        Number(value) || 0,
+                      ]),
                     );
+
+                    if (bookingOnly && booking) {
+                      courtSessions.updateBookingQuotas(booking.id, quotas);
+                    } else {
+                      courtSessions.updateQuotas(session.id, quotas);
+                    }
                     setEditQuotas(false);
                     toast.success("Quote aggiornate");
                   }}
