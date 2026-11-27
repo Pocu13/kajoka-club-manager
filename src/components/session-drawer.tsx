@@ -816,7 +816,7 @@ export function SessionDrawer({
               </Panel>
             )}
           </div>
-        ) : session.closed ? (
+               ) : session.closed ? (
           <div className="space-y-5">
             <Panel className="space-y-3 p-4">
               <div className="flex items-center justify-between gap-2">
@@ -838,113 +838,256 @@ export function SessionDrawer({
                   min="0"
                   step="0.01"
                   value={closedTotal}
+                  disabled={!editingClosedDetails}
                   onChange={(event) => setClosedTotal(event.target.value)}
                 />
               </Field>
 
               <p className="text-xs text-muted-foreground">
-                La modifica del prezzo totale aggiorna il resoconto, ma non
-                cambia gli incassi già registrati.
+                Le modifiche aggiornano il resoconto storico senza modificare
+                gli incassi e i movimenti contabili già registrati.
               </p>
+
+              {canEditClosedDetails && (
+                <div className="pt-1">
+                  {!editingClosedDetails ? (
+                    <Btn
+                      variant="outline"
+                      className="w-full"
+                      onClick={() => setEditingClosedDetails(true)}
+                    >
+                      Modifica
+                    </Btn>
+                  ) : (
+                    <Btn
+                      variant="primary"
+                      className="w-full"
+                      onClick={saveClosedSession}
+                    >
+                      Salva modifiche
+                    </Btn>
+                  )}
+                </div>
+              )}
             </Panel>
-                        <Panel className="space-y-3 p-4">
+
+            <Panel className="space-y-3 p-4">
               <div className="flex items-center justify-between gap-2">
                 <div className="label-caps text-muted-foreground">
                   Giocatori e quote
                 </div>
                 <span className="text-xs text-muted-foreground">
-                  {session.players.filter((item) => item.paid).length}/
-                  {session.players.length} pagati
+                  {closedPlayers.filter((item) => item.paid).length}/
+                  {closedPlayers.length} pagati
                 </span>
               </div>
 
-              {closedPlayers.map((item, index) => (
-                <div
-                  key={item.id}
-                  className="rounded-lg border border-border bg-surface-container p-3"
-                >
-                  <div className="mb-2 flex items-center gap-2">
-                    <span className="mono flex size-7 shrink-0 items-center justify-center rounded-full bg-surface-highest text-xs">
-                      {index + 1}
-                    </span>
+              <div className="space-y-2">
+                {closedPlayers.map((item, index) => {
+                  const active = selectedClosedPlayer?.id === item.id;
 
-                    <div className="min-w-0 flex-1">
-                      <Input
-                        value={item.name}
-                        disabled={item.paid}
-                        placeholder={`Giocatore ${index + 1}`}
-                        onChange={(event) =>
-                          updateClosedPlayer(item.id, {
-                            name: event.target.value,
-                          })
-                        }
-                      />
-                    </div>
+                  return (
+                    <button
+                      key={item.id}
+                      type="button"
+                      onClick={() => setSelPlayer(item.id)}
+                      className={cn(
+                        "flex w-full items-center gap-3 rounded-xl border p-3 text-left transition-colors",
+                        active
+                          ? "border-primary/70 bg-primary/5"
+                          : "border-border bg-surface-container hover:bg-surface-high",
+                      )}
+                    >
+                      <span
+                        className={cn(
+                          "mono flex size-8 shrink-0 items-center justify-center rounded-lg text-xs font-bold",
+                          active
+                            ? "bg-primary text-white"
+                            : "bg-surface-highest text-muted-foreground",
+                        )}
+                      >
+                        {`G${index + 1}`}
+                      </span>
 
-                    {item.paid ? (
-                      <Badge tone="success">PAGATO</Badge>
-                    ) : (
-                      <Badge tone="warning">DA PAGARE</Badge>
-                    )}
-                  </div>
+                      <span className="min-w-0 flex-1 truncate text-sm font-semibold">
+                        {item.name || `Giocatore ${index + 1}`}
+                      </span>
 
-                  <div className="flex items-center gap-2 pl-9">
-                    <div className="w-32">
-                      <Input
-                        type="number"
-                        min="0"
-                        step="0.01"
-                        value={String(item.quota)}
-                        disabled={item.paid}
-                        onChange={(event) =>
-                          updateClosedPlayer(item.id, {
-                            quota: Math.max(
+                      <span className="text-xs text-muted-foreground">
+                        {eur(
+                          item.quota +
+                            item.extras.reduce(
+                              (sum, extra) =>
+                                sum + extra.price * extra.qty,
                               0,
-                              Number(event.target.value) || 0,
                             ),
-                          })
-                        }
-                      />
-                    </div>
-                    <span className="text-xs text-muted-foreground">
-                      Quota giocatore (€)
-                    </span>
+                        )}
+                      </span>
+
+                      {item.paid ? (
+                        <Badge tone="success">PAGATO</Badge>
+                      ) : (
+                        <Badge tone="warning">DA PAGARE</Badge>
+                      )}
+                    </button>
+                  );
+                })}
+              </div>
+
+              {selectedClosedPlayer && (
+                <div className="space-y-4 rounded-xl border border-border bg-surface-container p-3">
+                  <div className="label-caps text-muted-foreground">
+                    Dettaglio giocatore
                   </div>
 
-                  {item.extras.length > 0 && (
-                    <div className="mt-3 space-y-1 rounded-lg border border-border bg-surface px-3 py-2">
-                      <div className="label-caps text-muted-foreground">
-                        Extra registrati
-                      </div>
+                  <Field label="Nome giocatore">
+                    <Input
+                      value={selectedClosedPlayer.name}
+                      disabled={!editingClosedDetails}
+                      onChange={(event) =>
+                        updateClosedPlayer(selectedClosedPlayer.id, {
+                          name: event.target.value,
+                        })
+                      }
+                    />
+                  </Field>
 
-                      {item.extras.map((extra) => (
+                  <Field label="Quota giocatore (€)">
+                    <Input
+                      type="number"
+                      min="0"
+                      step="0.01"
+                      value={String(selectedClosedPlayer.quota)}
+                      disabled={!editingClosedDetails}
+                      onChange={(event) =>
+                        updateClosedPlayer(selectedClosedPlayer.id, {
+                          quota: Math.max(
+                            0,
+                            Number(event.target.value) || 0,
+                          ),
+                        })
+                      }
+                    />
+                  </Field>
+
+                  <div className="flex items-center justify-between gap-3">
+                    <div>
+                      <div className="text-sm font-semibold">
+                        Stato pagamento
+                      </div>
+                      <div className="text-xs text-muted-foreground">
+                        {selectedClosedPlayer.paid
+                          ? "Pagamento registrato"
+                          : "Pagamento non saldato"}
+                      </div>
+                    </div>
+
+                    <Toggle
+                      checked={selectedClosedPlayer.paid}
+                      disabled={!editingClosedDetails}
+                      onChange={(paid) =>
+                        updateClosedPlayer(selectedClosedPlayer.id, {
+                          paid,
+                        })
+                      }
+                    />
+                  </div>
+
+                  <div className="space-y-3">
+                    <div className="flex items-center justify-between">
+                      <div className="label-caps text-muted-foreground">
+                        Extra acquistati
+                      </div>
+                    </div>
+
+                    {selectedClosedPlayer.extras.length === 0 ? (
+                      <p className="text-xs text-muted-foreground">
+                        Nessun extra registrato.
+                      </p>
+                    ) : (
+                      selectedClosedPlayer.extras.map((extra) => (
                         <div
                           key={extra.productId}
-                          className="mono flex items-center justify-between text-[11px]"
+                          className="space-y-2 rounded-lg border border-border bg-surface p-3"
                         >
-                          <span>
-                            {extra.qty}× {extra.name}
-                          </span>
-                          <span>{eur(extra.price * extra.qty)}</span>
+                          <div className="flex items-center justify-between gap-2">
+                            <span className="text-sm font-semibold">
+                              {extra.name}
+                            </span>
+
+                            {editingClosedDetails && (
+                              <Btn
+                                type="button"
+                                variant="danger"
+                                size="sm"
+                                onClick={() =>
+                                  removeClosedExtra(
+                                    selectedClosedPlayer.id,
+                                    extra.productId,
+                                  )
+                                }
+                              >
+                                <Trash2 size={14} />
+                                Elimina
+                              </Btn>
+                            )}
+                          </div>
+
+                          <div className="grid grid-cols-2 gap-3">
+                            <Field label="Quantità">
+                              <Input
+                                type="number"
+                                min="1"
+                                step="1"
+                                value={String(extra.qty)}
+                                disabled={!editingClosedDetails}
+                                onChange={(event) =>
+                                  updateClosedExtra(
+                                    selectedClosedPlayer.id,
+                                    extra.productId,
+                                    {
+                                      qty: Math.max(
+                                        1,
+                                        Number(event.target.value) || 1,
+                                      ),
+                                    },
+                                  )
+                                }
+                              />
+                            </Field>
+
+                            <Field label="Prezzo unitario (€)">
+                              <Input
+                                type="number"
+                                min="0"
+                                step="0.01"
+                                value={String(extra.price)}
+                                disabled={!editingClosedDetails}
+                                onChange={(event) =>
+                                  updateClosedExtra(
+                                    selectedClosedPlayer.id,
+                                    extra.productId,
+                                    {
+                                      price: Math.max(
+                                        0,
+                                        Number(event.target.value) || 0,
+                                      ),
+                                    },
+                                  )
+                                }
+                              />
+                            </Field>
+                          </div>
+
+                          <div className="text-right text-xs text-muted-foreground">
+                            Totale: {eur(extra.qty * extra.price)}
+                          </div>
                         </div>
-                      ))}
-                    </div>
-                  )}
+                      ))
+                    )}
+                  </div>
                 </div>
-              ))}
-
-              <p className="text-xs text-muted-foreground">
-                I dati dei giocatori già pagati sono bloccati. Puoi correggere
-                i nomi e le quote dei soli giocatori non pagati.
-              </p>
-
-              <Btn
-                variant="primary"
-                className="w-full"
-                onClick={saveClosedSession}
-              >
-                Salva modifiche al resoconto
-              </Btn>
+              )}
             </Panel>
 
             <Panel className="space-y-3 p-4">
@@ -970,6 +1113,20 @@ export function SessionDrawer({
                 Gli incassi storici sono mostrati a titolo informativo e non
                 vengono ricalcolati dalle modifiche del resoconto.
               </div>
+            </Panel>
+
+            <WhatsAppShare
+              title="Invia riepilogo partita su WhatsApp"
+              text={sessionSummary(
+                {
+                  ...session,
+                  total: Number(closedTotal.replace(",", ".")) || session.total,
+                  players: closedPlayers,
+                },
+                court.name,
+              )}
+            />
+          </div>
             </Panel>
 
             <WhatsAppShare
