@@ -57,28 +57,44 @@ export function SessionDrawer({
   onStart,
   onCheckIn,
 }: SessionDrawerProps) {
+  const historicalPlayers: Player[] = sourceSession?.players?.length
+    ? sourceSession.players.map((item) => ({ ...item, extras: [...(item.extras ?? [])] }))
+    : booking?.participants?.length
+      ? booking.participants.map((item) => ({ ...item, extras: [...(item.extras ?? [])] }))
+      : (booking?.players ?? []).filter((name) => name.trim()).map((name, index) => ({
+          id: `booking-${booking?.id ?? "historical"}-player-${index + 1}`,
+          name,
+          quota: Math.round(((booking?.price ?? 0) / Math.max(1, booking?.players.length ?? 1)) * 100) / 100,
+          paid: false,
+          extras: [],
+        }));
+
   const session: Session | null =
-    bookingOnly && booking
+    displayOnly && booking
       ? {
-          id: `booking-${booking.id}`,
+          id: `historical-${booking.id}`,
           courtId: booking.courtId,
-          startedAt: new Date(
-            `${booking.date}T${booking.start}:00`,
-          ).toISOString(),
-                 durationMin: Math.max(
-            30,
-            (Number(booking.end.slice(0, 2)) * 60 +
-              Number(booking.end.slice(3, 5))) -
-              (Number(booking.start.slice(0, 2)) * 60 +
-                Number(booking.start.slice(3, 5))),
-          ),
+          startedAt: new Date(`${booking.date}T${booking.start}:00`).toISOString(),
+          durationMin: Math.max(30, (Number(booking.end.slice(0, 2)) * 60 + Number(booking.end.slice(3, 5))) - (Number(booking.start.slice(0, 2)) * 60 + Number(booking.start.slice(3, 5)) ),
           pricingMode: "campo",
           total: booking.price,
-          players: booking.participants ?? [],
-          closed: false,
+          players: historicalPlayers,
+          closed: true,
           bookingId: booking.id,
         }
-      : sourceSession;
+      : bookingOnly && booking
+        ? {
+            id: `booking-${booking.id}`,
+            courtId: booking.courtId,
+            startedAt: new Date(`${booking.date}T${booking.start}:00`).toISOString(),
+            durationMin: Math.max(30, (Number(booking.end.slice(0, 2)) * 60 + Number(booking.end.slice(3, 5))) - (Number(booking.start.slice(0, 2)) * 60 + Number(booking.start.slice(3, 5)) ),
+            pricingMode: "campo",
+            total: booking.price,
+            players: booking.participants ?? [],
+            closed: false,
+            bookingId: booking.id,
+          }
+        : sourceSession;
 
     const db = useDB();
   const [selPlayer, setSelPlayer] = useState<string | null>(null);
@@ -98,11 +114,7 @@ export function SessionDrawer({
   const [closedTotal, setClosedTotal] = useState("0");
   const [closedPlayers, setClosedPlayers] = useState<Player[]>([]);
   const [editingClosedDetails, setEditingClosedDetails] = useState(false);
-    const [closedPaymentMethod, setClosedPaymentMethod] = useState<
-    "contanti" | "carta" | "misto"
-  >("carta");
-  const [closedPaymentCash, setClosedPaymentCash] = useState("0");
-const [editingHistoricalBooking, setEditingHistoricalBooking] = useState(false);
+  const [editingHistoricalBooking, setEditingHistoricalBooking] = useState(false);
   useEffect(() => {
     if (!booking) {
       setBookingParticipants([]);
@@ -371,18 +383,41 @@ const fixedBookingParticipants = court.type === "padel" && !displayOnly;
       ),
     });
   };
-
   const removeClosedExtra = (
     playerId: string,
     productId: string,
   ) => {
     const item = closedPlayers.find((player) => player.id === playerId);
     if (!item) return;
-
     updateClosedPlayer(playerId, {
-      extras: item.extras.filter(
-        (extra) => extra.productId !== productId,
-      ),
+      extras: item.extras.filter((extra) => extra.productId !== productId),
+    });
+  };
+
+  const addClosedPlayer = () => {
+    if (!editingClosedDetails || closedPlayers.length >= (court?.type === "beach" ? 12 : 4)) return;
+    setClosedPlayers((current) => [...current, {
+      id: `historical-${booking?.id ?? "session"}-player-${Date.now()}`,
+      name: "", quota: 0, paid: false, extras: [],
+    }]);
+  };
+
+  const removeClosedPlayer = (playerId: string) => {
+    if (!editingClosedDetails) return;
+    setClosedPlayers((current) => current.filter((item) => item.id !== playerId));
+  };
+
+  const addClosedExtra = (playerId: string, product: (typeof quickExtras)[number]) => {
+    const item = closedPlayers.find((player) => player.id === playerId);
+    if (!item || !editingClosedDetails) return;
+    const existing = item.extras.find((extra) => extra.productId === product.id);
+    updateClosedPlayer(playerId, {
+      extras: existing
+        ? item.extras.map((extra) => extra.productId === product.id ? { ...extra, qty: extra.qty + 1 } : extra)
+        : [...item.extras, {
+            productId: product.id, name: product.name, qty: 1,
+            price: product.price, cost: product.cost,
+          }],
     });
   };
 
@@ -427,22 +462,24 @@ const fixedBookingParticipants = court.type === "padel" && !displayOnly;
       }
     }
 
-    const paymentCash = Number(closedPaymentCash.replace(",", ".")) || 0;
-
-    const result = courtSessions.updateClosedDetails(session.id, {
-      total: Math.round(total * 100) / 100,
-      paymentMethod: closedPaymentMethod,
-      paymentCash,
-      players: playersToSave,
-    });
-
-    if (!result.ok) {
-      toast.error(result.error ?? "Impossibile salvare il resoconto.");
+    if (!booking) {
+      toast.error("Prenotazione non trovata.");
       return;
     }
-
+    const names = playersToSave.map((item) => item.name);
+    const result = reservations.update(booking.id, {
+      participants: playersToSave,
+      players: names,
+      price: Math.round(total * 100) / 100,
+    });
+    if (!result.ok) {
+      toast.error(result.error ?? "Impossibile salvare la prenotazione.");
+      return;
+    }
+    setClosedPlayers(playersToSave);
+    setClosedTotal(String(Math.round(total * 100) / 100));
     setEditingClosedDetails(false);
-    toast.success("Resoconto della partita aggiornato.");
+    toast.success("Modifiche della partita salvate.");
   };
 
   return (
@@ -583,7 +620,7 @@ const fixedBookingParticipants = court.type === "padel" && !displayOnly;
             )
           ) : (
             <div className="grid gap-2">
-            
+
 
               <Btn
                 variant={booking ? "subtle" : "primary"}
@@ -722,7 +759,7 @@ const fixedBookingParticipants = court.type === "padel" && !displayOnly;
                                   onClick={() =>
                                     removeBookingParticipant(item.id)
                                   }
-                                >
+                                                                  >
                                   <Trash2 className="size-4" />
                                 </button>
                               )}
@@ -836,8 +873,8 @@ const fixedBookingParticipants = court.type === "padel" && !displayOnly;
               </Panel>
             )}
           </div>
-             
-       
+
+
         ) : (
           <div className="space-y-5">
             <Panel className="p-4">
@@ -887,7 +924,7 @@ const fixedBookingParticipants = court.type === "padel" && !displayOnly;
             )}
 
             <div>
-              
+
               <div className="mb-2 flex items-center justify-between gap-2">
                 <span className="label-caps text-muted-foreground">
                   Ripartizione quota e extra
@@ -929,8 +966,6 @@ const fixedBookingParticipants = court.type === "padel" && !displayOnly;
                           );
                           setClosedTotal(String(session.total));
                           setEditingClosedDetails(true);
-                          setClosedPaymentMethod("carta");
-setClosedPaymentCash("0");
                         }
                       }}
                     >
@@ -962,9 +997,9 @@ setClosedPaymentCash("0");
               </div>
 
 
-              
+
               <div className="space-y-2">
-                
+
               {editingClosedDetails && (
                 <div className="mb-4 space-y-3 rounded-xl border border-border bg-surface p-3">
                   <Field label="Prezzo totale della partita (€)">
@@ -979,44 +1014,18 @@ setClosedPaymentCash("0");
                     />
                   </Field>
 
-                  <Field label="Metodo di pagamento per i nuovi incassi">
-                    <Select
-                      value={closedPaymentMethod}
-                      onChange={(event) =>
-                        setClosedPaymentMethod(
-                          event.target.value as
-                            | "contanti"
-                            | "carta"
-                            | "misto",
-                        )
-                      }
-                    >
-                      <option value="contanti">Contanti</option>
-                      <option value="carta">Carta / POS</option>
-                      <option value="misto">Misto</option>
-                    </Select>
-                  </Field>
-
-                  {closedPaymentMethod === "misto" && (
-                    <Field label="Totale contanti da incassare (€)">
-                      <Input
-                        type="number"
-                        min="0"
-                        step="0.01"
-                        value={closedPaymentCash}
-                        onChange={(event) =>
-                          setClosedPaymentCash(event.target.value)
-                        }
-                      />
-                      <div className="mt-1 text-xs text-muted-foreground">
-                        La parte restante sarà registrata su carta.
-                      </div>
-                    </Field>
-                  )}
                 </div>
               )}
 
-                {session.players.map((p, index) => {
+                {editingClosedDetails && (
+                  <div className="mb-2 flex items-center justify-between gap-2">
+                    <span className="text-xs text-muted-foreground">{closedPlayers.length} partecipanti</span>
+                    <Btn size="sm" variant="outline" onClick={addClosedPlayer} disabled={closedPlayers.length >= (court.type === "beach" ? 12 : 4)}>
+                      <Plus className="size-3" /> Aggiungi giocatore
+                    </Btn>
+                  </div>
+                )}
+                {(displayOnly || editingClosedDetails ? closedPlayers : session.players).map((p, index) => {
                   const active = player?.id === p.id;
                   const closedItem =
                     closedPlayers.find((item) => item.id === p.id) ?? p;
@@ -1081,14 +1090,13 @@ setClosedPaymentCash("0");
                           )}
                         </div>
 
-                        {!editingClosedDetails &&
-                          (visiblePlayer.paid ? (
-                            <Badge tone="success">✓ PAGATO</Badge>
-                          ) : (
-                            <Badge tone="primary" dot>
-                              DA PAGARE
-                            </Badge>
-                          ))}
+                        {!editingClosedDetails ? (
+                          visiblePlayer.paid ? <Badge tone="success">✓ PAGATO</Badge> : <Badge tone="primary" dot>DA PAGARE</Badge>
+                        ) : (
+                          <button type="button" className="rounded p-1 text-danger" title="Rimuovi giocatore" onClick={() => removeClosedPlayer(p.id)}>
+                            <Trash2 className="size-4" />
+                          </button>
+                        )}
                       </div>
 
                       {editingClosedDetails ? (
@@ -1132,8 +1140,7 @@ setClosedPaymentCash("0");
                                 Nessun extra registrato.
                               </div>
                             )}
-
-                            {visiblePlayer.extras.map((extra) => (
+                                                        {visiblePlayer.extras.map((extra) => (
                               <div
                                 key={extra.productId}
                                 className="rounded-lg border border-border bg-surface p-2"
@@ -1195,6 +1202,15 @@ setClosedPaymentCash("0");
                                 </div>
                               </div>
                             ))}
+                            {quickExtras.length > 0 && (
+                              <div className="flex flex-wrap gap-2 pt-2">
+                                {quickExtras.map((product) => (
+                                  <Btn key={product.id} size="sm" variant="outline" onClick={() => addClosedExtra(p.id, product)}>
+                                    <Plus className="size-3" /> {product.name}
+                                  </Btn>
+                                ))}
+                              </div>
+                            )}
                           </div>
                         </div>
                       ) : (
