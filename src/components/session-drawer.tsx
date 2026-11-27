@@ -93,7 +93,13 @@ export function SessionDrawer({
             id: `booking-${booking.id}`,
             courtId: booking.courtId,
             startedAt: new Date(`${booking.date}T${booking.start}:00`).toISOString(),
-            durationMin: Math.max(30, (Number(booking.end.slice(0, 2)) * 60 + Number(booking.end.slice(3, 5))) - (Number(booking.start.slice(0, 2)) * 60 + Number(booking.start.slice(3, 5)) ),
+            durationMin: Math.max(
+  30,
+  (Number(booking.end.slice(0, 2)) * 60 +
+    Number(booking.end.slice(3, 5))) -
+    (Number(booking.start.slice(0, 2)) * 60 +
+      Number(booking.start.slice(3, 5))),
+),
             pricingMode: "campo",
             total: booking.price,
             players: booking.participants ?? [],
