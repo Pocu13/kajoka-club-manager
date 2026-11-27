@@ -1301,11 +1301,9 @@ function BookingDetail({
                 Giocatori e quote
               </div>
 
+              
               {!fixedParticipants &&
-                                participants.length < participantLimit &&
-                !participants.some(
-                  (player) => player.paid,
-                ) &&
+                participants.length < participantLimit &&
                 !booking.cancelled && (
                   <Btn
                     variant="outline"
@@ -1315,6 +1313,7 @@ function BookingDetail({
                     <Plus className="size-3" /> Aggiungi
                   </Btn>
                 )}
+
             </div>
 
             <div className="space-y-2">
