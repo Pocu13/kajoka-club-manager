@@ -142,6 +142,34 @@ const nid = (p: string) =>
 
 const round = (n: number) => Math.round(n * 100) / 100;
 
+const roundUpHalf = (value: number) =>
+  Math.ceil((Math.max(0, value) - 0.000001) * 2) / 2;
+
+function redistributeOneQuota(players: Player[], requested: Record<string, number>): Player[] {
+  const selected = players.find(
+    (player) =>
+      !player.paid &&
+      Object.prototype.hasOwnProperty.call(requested, player.id) &&
+      Math.abs((Number(requested[player.id]) || 0) - player.quota) > 0.001,
+  );
+  if (!selected) return players;
+
+  const selectedQuota = roundUpHalf(Number(requested[selected.id]) || 0);
+  const paidTotal = players.filter((player) => player.paid).reduce((sum, player) => sum + player.quota, 0);
+  const otherUnpaid = players.filter((player) => !player.paid && player.id !== selected.id);
+  const totalBefore = players.reduce((sum, player) => sum + player.quota, 0);
+  const remaining = Math.max(0, totalBefore - paidTotal - selectedQuota);
+  const otherQuota = otherUnpaid.length ? roundUpHalf(remaining / otherUnpaid.length) : 0;
+
+  return players.map((player) => {
+    if (player.id === selected.id) return { ...player, quota: selectedQuota };
+    if (!player.paid && otherUnpaid.some((other) => other.id === player.id)) {
+      return { ...player, quota: otherQuota };
+    }
+    return player;
+  });
+}
+
 function currentOperator(db: DB): { id: string; name: string } {
   const u = db.users.find((x) => x.id === db.currentUserId);
   return { id: u?.id ?? "system", name: u?.name ?? "Sistema" };
@@ -188,25 +216,15 @@ function createBookingParticipants(booking: Booking, total: number): Player[] {
     Math.max(minCount, names.length),
   );
 
-  const baseQuota = round(total / count);
-  let assigned = 0;
+  const baseQuota = roundUpHalf(total / count);
 
-  return Array.from({ length: count }, (_, index) => {
-    const quota =
-      index === count - 1
-        ? round(total - assigned)
-        : baseQuota;
-
-    assigned = round(assigned + quota);
-
-    return {
-      id: `g${index + 1}`,
-      name: names[index] || `Giocatore ${index + 1}`,
-      quota,
-      paid: false,
-      extras: [],
-    };
-  });
+  return Array.from({ length: count }, (_, index) => ({
+    id: `g${index + 1}`,
+    name: names[index] || `Giocatore ${index + 1}`,
+    quota: baseQuota,
+    paid: false,
+    extras: [],
+  }));
 }
 
 
@@ -395,7 +413,7 @@ export const sales = {
         sessionId: input.sessionId,
         bookingId: input.bookingId,
         playerName: input.playerName,
-        note: isGift
+                note: isGift
           ? [input.note, "Operazione omaggio: nessun incasso registrato."]
               .filter(Boolean)
               .join(" ")
@@ -505,7 +523,7 @@ export const courtSessions = {
      startedAt: new Date(`${booking.date}T${booking.start}:00`).toISOString(),
       durationMin: minutes,
       pricingMode: "giocatore",
-      total,
+      total: round(participants.reduce((sum, player) => sum + player.quota, 0)),
       players: participants,
       closed: false,
       bookingId: booking.id,
@@ -536,6 +554,7 @@ export const courtSessions = {
               ...b,
               participants,
               players: participants.map((p) => p.name),
+              price: round(participants.reduce((sum, player) => sum + player.quota, 0)),
             }
           : b,
       );
@@ -573,7 +592,7 @@ export const courtSessions = {
           : input.playerNames.map((n, i) => ({
               id: `g${i + 1}`,
               name: n.trim() || `Giocatore ${i + 1}`,
-              quota: round(input.total / Math.max(1, input.playerNames.length)),
+              quota: roundUpHalf(input.total / Math.max(1, input.playerNames.length)),
               paid: false,
               extras: [],
             }));
@@ -584,7 +603,7 @@ export const courtSessions = {
         startedAt: new Date().toISOString(),
         durationMin: input.durationMin,
         pricingMode: input.pricingMode,
-        total: input.total,
+        total: round(players.reduce((sum, player) => sum + player.quota, 0)),
         players,
         closed: false,
         ...(input.bookingId ? { bookingId: input.bookingId } : {}),
@@ -599,17 +618,15 @@ export const courtSessions = {
 
   updateQuotas(sessionId: string, quotas: Record<string, number>) {
     set((d) => {
-      d.sessions = d.sessions.map((s) =>
-        s.id === sessionId
-          ? {
-              ...s,
-              players: s.players.map((p) => ({ ...p, quota: quotas[p.id] ?? p.quota })),
-              total: round(
-                s.players.reduce((sum, p) => sum + (quotas[p.id] ?? p.quota), 0),
-              ),
-            }
-          : s,
-      );
+      d.sessions = d.sessions.map((session) => {
+        if (session.id !== sessionId) return session;
+        const players = redistributeOneQuota(session.players, quotas);
+        return {
+          ...session,
+          players,
+          total: round(players.reduce((sum, player) => sum + player.quota, 0)),
+        };
+      });
     });
   },
     addExtra(sessionId: string, playerId: string, productId: string) {
@@ -700,6 +717,7 @@ export const courtSessions = {
               ...item,
               participants,
               players: participants.map((player) => player.name),
+              price: round(participants.reduce((sum, player) => sum + player.quota, 0)),
             }
           : item,
       );
@@ -714,75 +732,29 @@ export const courtSessions = {
    * Gestione operativa anticipata direttamente sulla prenotazione.
    * Non crea sessioni e non occupa il campo.
    */
- 
+
   updateBookingQuotas(
     bookingId: string,
-    playerId: string,
-    newQuota: number,
+    quotasOrPlayerId: Record<string, number> | string,
+    newQuota?: number,
   ) {
     set((d) => {
       d.bookings = d.bookings.map((booking) => {
         if (booking.id !== bookingId) return booking;
-
         const participants = booking.participants ?? [];
-        const selectedPlayer = participants.find(
-          (player) => player.id === playerId,
-        );
-
-        if (!selectedPlayer || selectedPlayer.paid) return booking;
-
-        const totalBefore = participants.reduce(
-          (sum, player) => sum + player.quota,
-          0,
-        );
-
-        const quota = Math.max(
-          0,
-          Math.round(newQuota * 2) / 2,
-        );
-
-        const otherUnpaid = participants.filter(
-          (player) => !player.paid && player.id !== playerId,
-        );
-
-        const paidTotal = participants
-          .filter((player) => player.paid)
-          .reduce((sum, player) => sum + player.quota, 0);
-
-        const remaining = Math.max(
-          0,
-          totalBefore - paidTotal - quota,
-        );
-
-        const redistributedQuota =
-          otherUnpaid.length > 0
-            ? Math.ceil((remaining / otherUnpaid.length) * 2) / 2
-            : 0;
-
-        const updatedParticipants = participants.map((player) => {
-          if (player.id === playerId) {
-            return { ...player, quota };
-          }
-
-          if (!player.paid && otherUnpaid.length > 0) {
-            return {
-              ...player,
-              quota: redistributedQuota,
-            };
-          }
-
-          return player;
-        });
-
+        const requested =
+          typeof quotasOrPlayerId === "string"
+            ? {
+                ...Object.fromEntries(participants.map((player) => [player.id, player.quota])),
+                [quotasOrPlayerId]: newQuota ?? 0,
+              }
+            : quotasOrPlayerId;
+        const updatedParticipants = redistributeOneQuota(participants, requested);
         return {
           ...booking,
           participants: updatedParticipants,
-          price: Math.round(
-            updatedParticipants.reduce(
-              (sum, player) => sum + player.quota,
-              0,
-            ) * 100,
-          ) / 100,
+          players: updatedParticipants.map((player) => player.name),
+          price: round(updatedParticipants.reduce((sum, player) => sum + player.quota, 0)),
         };
       });
     });
@@ -856,7 +828,7 @@ export const courtSessions = {
         currentProduct,
         "prodotto_campo",
         -1,
-        "Prenotazione · Extra giocatore",
+                "Prenotazione · Extra giocatore",
         bookingId,
         "Extra assegnato prima dell'inizio della partita.",
       );
@@ -865,7 +837,7 @@ export const courtSessions = {
     return { ok: true };
   },
 
-  
+
   removeBookingExtra(bookingId: string, playerId: string, productId: string) {
     set((d) => {
       const booking = d.bookings.find((item) => item.id === bookingId);
@@ -949,7 +921,7 @@ export const courtSessions = {
 
     const requestedQuota =
       targets.length === 1 && Number.isFinite(quotaAmount)
-        ? Math.max(0, Math.min(quotaTotal, round(quotaAmount!)))
+        ? Math.min(quotaTotal, roundUpHalf(Math.min(quotaTotal, quotaAmount!)))
         : quotaTotal;
 
     const unpaidOthers = participants.filter(
@@ -1025,7 +997,7 @@ export const courtSessions = {
       );
       const currentRequestedQuota =
         currentTargets.length === 1 && Number.isFinite(quotaAmount)
-          ? Math.max(0, Math.min(currentQuota, round(quotaAmount!)))
+          ? Math.min(currentQuota, roundUpHalf(Math.min(currentQuota, quotaAmount!)))
           : currentQuota;
       const currentAmount = round(currentRequestedQuota + currentExtras);
 
@@ -1064,56 +1036,37 @@ export const courtSessions = {
 
       d.transactions = [tx, ...d.transactions];
 
-      const totalCents = Math.round(currentDifference * 100);
-      const shareCents = currentUnpaidOthers.length
-        ? Math.floor(totalCents / currentUnpaidOthers.length)
-        : 0;
-      let extraCents = currentUnpaidOthers.length
-        ? totalCents % currentUnpaidOthers.length
-        : 0;
-
-      d.bookings = d.bookings.map((item) =>
-        item.id !== bookingId
-          ? item
-          : {
-              ...item,
-              participants: currentParticipants.map((player) => {
-                if (playerIds.includes(player.id) && !player.paid) {
-                  return {
-                    ...player,
-                    quota:
-                      currentTargets.length === 1
-                        ? currentRequestedQuota
-                        : player.quota,
-                    paid: true,
-                  };
-                }
-
-                if (
-                  currentDifference > 0 &&
-                  currentUnpaidOthers.some((other) => other.id === player.id)
-                ) {
-                  const additionCents =
-                    shareCents + (extraCents > 0 ? 1 : 0);
-
-                  if (extraCents > 0) extraCents -= 1;
-
-                  return {
-                    ...player,
-                    quota: round(player.quota + additionCents / 100),
-                  };
-                }
-
-                return player;
-              }),
-            },
-      );
+      d.bookings = d.bookings.map((item) => {
+        if (item.id !== bookingId) return item;
+        const redistributedQuota = currentUnpaidOthers.length
+          ? roundUpHalf(currentDifference / currentUnpaidOthers.length)
+          : 0;
+        const updatedParticipants = currentParticipants.map((player) => {
+          if (playerIds.includes(player.id) && !player.paid) {
+            return {
+              ...player,
+              quota: currentTargets.length === 1 ? currentRequestedQuota : player.quota,
+              paid: true,
+            };
+          }
+          if (currentDifference > 0 && currentUnpaidOthers.some((other) => other.id === player.id)) {
+            return { ...player, quota: roundUpHalf(player.quota + redistributedQuota) };
+          }
+          return player;
+        });
+        return {
+          ...item,
+          participants: updatedParticipants,
+          players: updatedParticipants.map((player) => player.name),
+          price: round(updatedParticipants.reduce((sum, player) => sum + player.quota, 0)),
+        };
+      });
     });
 
     return { ok: true };
   },
 
-   
+
   payPlayers(
     sessionId: string,
     playerIds: string[],
@@ -1140,7 +1093,7 @@ export const courtSessions = {
       // Gli incassi cumulativi mantengono le quote complete selezionate.
       const requestedQuota =
         targets.length === 1 && Number.isFinite(quotaAmount)
-          ? Math.max(0, Math.min(currentQuotaTotal, round(quotaAmount!)))
+          ? Math.min(currentQuotaTotal, roundUpHalf(Math.min(currentQuotaTotal, quotaAmount!)))
           : currentQuotaTotal;
 
       const unpaidOthers = session.players.filter(
@@ -1197,46 +1150,26 @@ export const courtSessions = {
 
       d.sessions = d.sessions.map((item) => {
         if (item.id !== sessionId) return item;
-
-        const totalCents = Math.round(difference * 100);
-        const shareCents =
-          unpaidOthers.length > 0
-            ? Math.floor(totalCents / unpaidOthers.length)
-            : 0;
-        let extraCents =
-          unpaidOthers.length > 0
-            ? totalCents % unpaidOthers.length
-            : 0;
-
+        const redistributedQuota = unpaidOthers.length
+          ? roundUpHalf(difference / unpaidOthers.length)
+          : 0;
+        const updatedPlayers = item.players.map((player) => {
+          if (playerIds.includes(player.id) && !player.paid) {
+            return {
+              ...player,
+              quota: targets.length === 1 ? requestedQuota : player.quota,
+              paid: true,
+            };
+          }
+          if (difference > 0 && !player.paid && unpaidOthers.some((other) => other.id === player.id)) {
+            return { ...player, quota: roundUpHalf(player.quota + redistributedQuota) };
+          }
+          return player;
+        });
         return {
           ...item,
-          players: item.players.map((player) => {
-            if (playerIds.includes(player.id) && !player.paid) {
-              return {
-                ...player,
-                quota: targets.length === 1 ? requestedQuota : player.quota,
-                paid: true,
-              };
-            }
-
-            if (
-              difference > 0 &&
-              !player.paid &&
-              unpaidOthers.some((other) => other.id === player.id)
-            ) {
-              const additionCents =
-                shareCents + (extraCents > 0 ? 1 : 0);
-
-              if (extraCents > 0) extraCents -= 1;
-
-              return {
-                ...player,
-                quota: round(player.quota + additionCents / 100),
-              };
-            }
-
-            return player;
-          }),
+          players: updatedPlayers,
+          total: round(updatedPlayers.reduce((sum, player) => sum + player.quota, 0)),
         };
       });
     });
