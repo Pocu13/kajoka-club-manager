@@ -1065,6 +1065,7 @@ export const courtSessions = {
         courtId: currentBooking.courtId,
         bookingId,
         playerName: currentTargets.map((player) => player.name).join(", "),
+                playerIds: currentTargets.map((player) => player.id),
         note: "Pagamento anticipato quota campo ed extra.",
         cancelled: false,
       };
