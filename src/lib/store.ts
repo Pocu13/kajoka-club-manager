@@ -421,9 +421,8 @@ export const sales = {
       const isGift = input.method === "omaggio";
 
       const subtotal = round(
-        input.items.reduce((s, i) => s + i.price * i.qty, 0),
+                input.items.reduce((s, i) => s + i.price * i.qty, 0),
       );
-            );
 
       const discount = isGift ? subtotal : input.discount;
       const amount = isGift ? 0 : round(subtotal - discount);
@@ -853,12 +852,6 @@ export const courtSessions = {
                           price: currentProduct.price,
                           cost: currentProduct.cost,
                         },
-                                                productId: currentProduct.id,
-                          name: currentProduct.name,
-                          qty: 1,
-                          price: currentProduct.price,
-                          cost: currentProduct.cost,
-                        },
                       ],
                 };
               }),
@@ -1275,7 +1268,7 @@ export const courtSessions = {
     });
 
     return { ok: true };
-  },
+      },
   /**
    * Modifica esclusivamente i dettagli di una sessione conclusa.
    * Le quote e i nomi dei giocatori pagati restano invariati.
