@@ -486,7 +486,7 @@ export const courtSessions = {
     const session: Session = {
       id: sessionId,
       courtId: booking.courtId,
-      startedAt: new Date().toISOString(),
+     startedAt: new Date(`${booking.date}T${booking.start}:00`).toISOString(),
       durationMin: minutes,
       pricingMode: "giocatore",
       total,
