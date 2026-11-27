@@ -150,24 +150,28 @@ export function SessionDrawer({
     setBookingParticipants(initialParticipants);
   }, [booking?.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  useEffect(() => {
+   useEffect(() => {
     if (!session?.closed) {
       setClosedTotal("0");
       setClosedPlayers([]);
+      setEditingClosedDetails(false);
+      setSelPlayer(null);
       return;
     }
 
     setClosedTotal(String(session.total));
-    setClosedPlayers(
-      session.players.map((player) => ({
-        ...player,
-        extras: [...(player.extras ?? [])],
-      })),
-    );
+
+    const players = session.players.map((player) => ({
+      ...player,
+      extras: [...(player.extras ?? [])],
+    }));
+
+    setClosedPlayers(players);
+    setSelPlayer(players[0]?.id ?? null);
+    setEditingClosedDetails(false);
     setPayOpen(false);
     setPayIds([]);
     setEditQuotas(false);
-        setEditingClosedDetails(false);
   }, [session?.id, session?.closed]);
 
   if (!court) return null;
@@ -175,6 +179,16 @@ export function SessionDrawer({
   const player =
     session?.players.find((p) => p.id === selPlayer) ??
     session?.players[0] ??
+    null;
+    const canEditClosedDetails =
+    displayOnly &&
+    !!booking &&
+    !!session?.closed &&
+    session.bookingId === booking.id;
+
+  const selectedClosedPlayer =
+    closedPlayers.find((item) => item.id === selPlayer) ??
+    closedPlayers[0] ??
     null;
 
   const quickExtras = db.products
