@@ -1042,7 +1042,7 @@ export function SessionDrawer({
                         )}
                       </div>
 
-                      {editQuotas && !p.paid && (
+                     {!displayOnly && editQuotas && !p.paid && (
                         <div className="mt-3 flex items-center gap-2">
                           <Input
                             type="number"
@@ -1109,8 +1109,7 @@ export function SessionDrawer({
                           </div>
                         </div>
                       )}
-
-                      {!p.paid && (
+{!displayOnly && !p.paid && (!p.paid && (
                         <div className="mt-3 flex justify-end">
                           <Btn
                             size="sm"
