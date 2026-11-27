@@ -410,7 +410,7 @@ function BookingsPage() {
           <BookingDetail
         booking={selected}
         onClose={() => setDetail(null)}
-        onActivate={() => {
+        onPay={() => {
           if (!selected) return;
           setDetail(null);
           setOperationalBookingId(selected.id);
