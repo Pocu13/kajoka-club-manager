@@ -1152,6 +1152,7 @@ export function SessionDrawer({
                   method,
                   cashAmount,
                   Math.max(0, payTotal - cashAmount),
+                  payQuotaTotal,
                 );
 
                 setPayOpen(false);
