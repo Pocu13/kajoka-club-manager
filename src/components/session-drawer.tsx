@@ -689,7 +689,7 @@ const fixedBookingParticipants = court.type === "padel" && !displayOnly;
                             <Input
                               value={item.name}
                               placeholder={`Giocatore ${index + 1}`}
-                              disabled={item.paid}
+                              disabled={item.paid || (displayOnly && !editingHistoricalBooking)}
                               onChange={(event) =>
                                 updateBookingParticipant(item.id, {
                                   name: event.target.value,
