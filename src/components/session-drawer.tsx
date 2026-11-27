@@ -887,29 +887,78 @@ const fixedBookingParticipants = court.type === "padel" && !displayOnly;
             )}
 
             <div>
-              <div className="mb-2 flex items-center justify-between">
+              
+              <div className="mb-2 flex items-center justify-between gap-2">
                 <span className="label-caps text-muted-foreground">
                   Ripartizione quota e extra
                 </span>
-                {!displayOnly && (
-                  <button
-                  className="text-xs font-semibold text-primary"
-                  onClick={() => {
-                    setQuotaDraft(
-                      Object.fromEntries(
-                        session.players.map((p) => [
-                          p.id,
-                          String(p.quota),
-                        ]),
-                      ),
-                    );
-                    setEditQuotas((value) => !value);
-                  }}
-                >
-                  {editQuotas ? "Chiudi" : "Modifica quote"}
-                                </button>
+
+                {canEditClosedDetails ? (
+                  <div className="flex gap-2">
+                    {editingClosedDetails && (
+                      <Btn
+                        size="sm"
+                        variant="subtle"
+                        onClick={() => {
+                          setClosedPlayers(
+                            session.players.map((item) => ({
+                              ...item,
+                              extras: [...(item.extras ?? [])],
+                            })),
+                          );
+                          setClosedTotal(String(session.total));
+                          setEditingClosedDetails(false);
+                        }}
+                      >
+                        Annulla
+                      </Btn>
+                    )}
+
+                    <Btn
+                      size="sm"
+                      variant={editingClosedDetails ? "primary" : "outline"}
+                      onClick={() => {
+                        if (editingClosedDetails) {
+                          saveClosedSession();
+                        } else {
+                          setClosedPlayers(
+                            session.players.map((item) => ({
+                              ...item,
+                              extras: [...(item.extras ?? [])],
+                            })),
+                          );
+                          setClosedTotal(String(session.total));
+                          setEditingClosedDetails(true);
+                        }
+                      }}
+                    >
+                      {editingClosedDetails
+                        ? "Salva modifiche"
+                        : "Modifica"}
+                    </Btn>
+                  </div>
+                ) : (
+                  !displayOnly && (
+                    <button
+                      className="text-xs font-semibold text-primary"
+                      onClick={() => {
+                        setQuotaDraft(
+                          Object.fromEntries(
+                            session.players.map((p) => [
+                              p.id,
+                              String(p.quota),
+                            ]),
+                          ),
+                        );
+                        setEditQuotas((value) => !value);
+                      }}
+                    >
+                      {editQuotas ? "Chiudi" : "Modifica quote"}
+                    </button>
+                  )
                 )}
               </div>
+
 
               <div className="space-y-2">
                 {session.players.map((p, index) => {
