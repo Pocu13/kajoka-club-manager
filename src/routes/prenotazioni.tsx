@@ -443,12 +443,26 @@ function BookingsPage() {
         bookingOnly={!!operationalBooking && !operationalSession}
         upcomingBooking={null}
         onClose={() => {
-          const bookingId = operationalBooking?.id ?? null;
-          setOperationalBookingId(null);
-          if (bookingId) setDetail(bookingId);
-        }}
-        onStart={() => setOperationalBookingId(null)}
-        onCheckIn={() => {}}
+  const bookingToReturn = operationalBooking;
+  setOperationalBookingId(null);
+
+  if (!bookingToReturn) return;
+
+  const now = new Date();
+  const currentDate = dateKey(now);
+  const currentMinute = minutesNow(now);
+
+  const isBookingInProgress =
+    bookingToReturn.date === currentDate &&
+    currentMinute >= toMin(bookingToReturn.start) &&
+    currentMinute < toMin(bookingToReturn.end);
+
+  if (isBookingInProgress) {
+    setDetail(bookingToReturn.id);
+  } else {
+    setDetail(null);
+  }
+}}
       />
     </div>
   );
