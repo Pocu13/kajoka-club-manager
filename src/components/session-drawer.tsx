@@ -98,7 +98,7 @@ export function SessionDrawer({
   const [closedTotal, setClosedTotal] = useState("0");
   const [closedPlayers, setClosedPlayers] = useState<Player[]>([]);
   const [editingClosedDetails, setEditingClosedDetails] = useState(false);
-
+const [editingHistoricalBooking, setEditingHistoricalBooking] = useState(false);
   useEffect(() => {
     if (!booking) {
       setBookingParticipants([]);
@@ -113,17 +113,16 @@ export function SessionDrawer({
     )?.type;
 
     const maxParticipants = courtType === "beach" ? 12 : 4;
-    const fixedParticipants = courtType === "padel";
-    const count = fixedParticipants
-      ? 4
-      : Math.max(
-          2,
-          Math.min(
-            maxParticipants,
-            booking.participants?.length || booking.players.length || 2,
-          ),
-        );
+const fixedParticipants = courtType === "padel";
 
+const existingCount =
+  booking.participants?.length || booking.players.length || 0;
+
+const count = displayOnly
+  ? Math.max(1, Math.min(maxParticipants, existingCount || 1))
+  : fixedParticipants
+    ? 4
+    : Math.max(2, Math.min(maxParticipants, existingCount || 2));
     const initialParticipants: Player[] = Array.from(
       { length: count },
       (_, index) => {
@@ -234,8 +233,7 @@ export function SessionDrawer({
         .filter((p) => p.paid)
         .reduce((sum, p) => sum + p.quota, 0)
     : 0;
-
-  const fixedBookingParticipants = court.type === "padel";
+const fixedBookingParticipants = court.type === "padel" && !displayOnly;
   const bookingParticipantLimit = court.type === "beach" ? 12 : 4;
 
   const updateBookingParticipant = (
@@ -278,7 +276,7 @@ export function SessionDrawer({
 
     if (
       fixedBookingParticipants ||
-      bookingParticipants.length <= 2 ||
+     bookingParticipants.length <= (displayOnly ? 1 : 2) ||
       target?.paid
     ) {
       return;
@@ -292,11 +290,15 @@ export function SessionDrawer({
   const saveActiveBooking = () => {
     if (!booking) return;
 
-    const names = bookingParticipants.map((item) =>
+    const participantsToSave = displayOnly
+      ? bookingParticipants.filter((item) => item.name.trim())
+      : bookingParticipants;
+
+    const names = participantsToSave.map((item) =>
       item.name.trim(),
     );
 
-    if (names.some((name) => !name)) {
+    if (!displayOnly && names.some((name) => !name)) {
       toast.error("Inserisci il nome di tutti i partecipanti.");
       return;
     }
@@ -308,18 +310,15 @@ export function SessionDrawer({
       return;
     }
 
-    for (const item of bookingParticipants) {
-      if (
-        !Number.isFinite(item.quota) ||
-        item.quota < 0
-      ) {
+    for (const item of participantsToSave) {
+      if (!Number.isFinite(item.quota) || item.quota < 0) {
         toast.error(`Controlla la quota di ${item.name || "un giocatore"}.`);
         return;
       }
     }
 
     const result = reservations.update(booking.id, {
-      participants: bookingParticipants,
+      participants: participantsToSave,
       players: names,
       price: Math.round(price * 100) / 100,
     });
@@ -331,7 +330,8 @@ export function SessionDrawer({
       return;
     }
 
-    toast.success("Prezzo, partecipanti e quote salvati.");
+    setEditingHistoricalBooking(false);
+    toast.success("Prezzo, giocatori e quote salvati.");
   };
 
       const updateClosedPlayer = (
@@ -615,7 +615,7 @@ export function SessionDrawer({
                   <div className="flex flex-wrap items-center justify-between gap-2">
                     <div>
                       <div className="label-caps text-primary">
-                        Prenotazione in corso
+                      {displayOnly ? "Prenotazione passata" : "Prenotazione in corso"}
                       </div>
                       <div className="mt-1 font-semibold">
                         {booking.title}
