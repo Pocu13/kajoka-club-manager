@@ -109,6 +109,7 @@ function HomePage() {
   const [view, setView] = useState<"3d" | "2d">("3d");
   const [selected, setSelected] = useState<string | null>(null);
   const [newOpen, setNewOpen] = useState(false);
+  const [bookingOnly, setBookingOnly] = useState(false);
   const [romeHour, setRomeHour] = useState(() => getRomeHour());
   const [now, setNow] = useState(() => new Date());
   const [pageHeight, setPageHeight] = useState<number | null>(null);
@@ -380,10 +381,22 @@ function HomePage() {
   const todayCount = todayTransactions.length;
   const lowStock = db.products.filter((p) => p.stock <= p.minStock).length;
 
-  const court = db.courts.find((c) => c.id === selected) ?? null;
+    const court = db.courts.find((c) => c.id === selected) ?? null;
   const session = court ? (sessionByCourt.get(court.id) ?? null) : null;
   const booking = court ? (bookingByCourt.get(court.id) ?? null) : null;
   const upcomingBooking = court ? (nextBookingByCourt.get(court.id) ?? null) : null;
+
+  const canPayBooking = Boolean(
+    booking &&
+      !session &&
+      booking.date === todayKey &&
+      currentMinute >= toMin(booking.start) &&
+      currentMinute < toMin(booking.end),
+  );
+
+  useEffect(() => {
+    setBookingOnly(false);
+  }, [selected, booking?.id]);
 
   const compactMap = mapSize.width < 760;
   const tinyMap = mapSize.width < 440;
@@ -758,10 +771,13 @@ function HomePage() {
         </div>
       </div>
 
-      <SessionDrawer
+           <SessionDrawer
         court={court}
         session={session}
         booking={booking}
+        bookingOnly={bookingOnly}
+        canPayBooking={canPayBooking}
+        onToggleBookingOnly={setBookingOnly}
         upcomingBooking={upcomingBooking}
         onClose={() => setSelected(null)}
         onStart={() => setNewOpen(true)}
