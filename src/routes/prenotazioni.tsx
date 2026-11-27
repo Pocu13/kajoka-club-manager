@@ -1247,8 +1247,7 @@ function BookingDetail({
           )}
 
           {editing && (
-            <Panel className="space-y-3 p-4">
-              <Field label="Prezzo totale prenotazione (€)">
+                          <Field label="Prezzo totale prenotazione (€)">
                 <Input
                   type="number"
                   min="0"
