@@ -178,7 +178,7 @@ export function SessionDrawer({
     Number.isFinite(parsedPayQuota) &&
     parsedPayQuota >= 0
       ? parsedPayQuota
-      : payQuotaBase;
+     ? Math.min(parsedPayQuota, payQuotaBase)
 
   const payTotal = payQuotaTotal + payExtrasTotal;
 
@@ -1172,7 +1172,55 @@ export function SessionDrawer({
             </span>
             <span className="text-xl font-bold">{eur(payTotal)}</span>
           </div>
+          {payIds.length === 1 && (
+            <Field label="Quota campo da incassare (€)">
+              <Input
+                type="number"
+                min="0"
+                max={payQuotaBase}
+                step="0.50"
+                value={payQuotaAmount}
+                onChange={(e) => setPayQuotaAmount(e.target.value)}
+              />
+              <div className="grid grid-cols-2 gap-2 mt-2">
+                <Btn
+                  variant="outline"
+                  onClick={() =>
+                    setPayQuotaAmount(
+                      Math.max(
+                        0,
+                        (Number(payQuotaAmount.replace(",", ".")) || 0) - 0.5,
+                      ).toFixed(2),
+                    )
+                  }
+                >
+                  − 0,50 €
+                </Btn>
+                <Btn
+                  variant="outline"
+                  onClick={() =>
+                    setPayQuotaAmount(
+                      Math.min(
+                        payQuotaBase,
+                        (Number(payQuotaAmount.replace(",", ".")) || 0) + 0.5,
+                      ).toFixed(2),
+                    )
+                  }
+                >
+                  + 0,50 €
+                </Btn>
+              </div>
+            </Field>
+          )}
 
+          {payExtrasTotal > 0 && (
+            <div className="flex justify-between text-sm">
+              <span className="text-muted-foreground">
+                Extra (importo integrale)
+              </span>
+              <span className="font-semibold">{eur(payExtrasTotal)}</span>
+            </div>
+          )}
           <Field label="Metodo di pagamento">
             <Select
               value={method}
