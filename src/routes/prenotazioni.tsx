@@ -50,14 +50,7 @@ const MONTHS = [
   "Gennaio", "Febbraio", "Marzo", "Aprile", "Maggio", "Giugno",
   "Luglio", "Agosto", "Settembre", "Ottobre", "Novembre", "Dicembre",
 ];
-function LegendDot({ cls, label }: { cls: string; label: string }) {
-  return (
-    <span className="inline-flex items-center gap-2 text-xs text-muted-foreground">
-      <span className={`size-2.5 rounded-full ${cls}`} />
-      {label}
-    </span>
-  );
-}
+
 export const Route = createFileRoute("/prenotazioni")({
   ssr: false,
   head: () => ({
