@@ -1204,8 +1204,34 @@ export const courtSessions = {
           courtId: session.courtId,
           sessionId: session.id,
           bookingId: session.bookingId,
-          playerName: targets.map((target) => target.name).join(", "),
+                    playerName: targets.map((target) => target.name).join(", "),
           playerIds: targets.map((target) => target.id),
+          playerPayments: targets.map((target) => {
+            const extras = target.extras.map((extra) => ({
+              productId: extra.productId,
+              name: extra.name,
+              qty: extra.qty,
+              price: extra.price,
+              cost: extra.cost,
+            }));
+
+            const quota =
+              targets.length === 1 ? requestedQuota : target.quota;
+
+            return {
+              playerId: target.id,
+              playerName: target.name,
+              quota,
+              extras,
+              amount: round(
+                quota +
+                  extras.reduce(
+                    (sum, extra) => sum + extra.price * extra.qty,
+                    0,
+                  ),
+              ),
+            };
+          }),
           note: "Saldo quota campo ed extra. La quota campo può essere redistribuita tra i giocatori non ancora saldati.",
           cancelled: false,
         },
