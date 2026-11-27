@@ -1153,8 +1153,22 @@ export function SessionDrawer({
                     <button
                       key={p.id}
                       disabled={p.stock <= 0}
-                      onClick={() => {
-                        courtSessions.addExtra(session.id, player.id, p.id);
+                                           onClick={() => {
+                        if (bookingOnly && booking) {
+                          const result = courtSessions.addBookingExtra(
+                            booking.id,
+                            player.id,
+                            p.id,
+                          );
+
+                          if (!result.ok) {
+                            toast.error(result.error ?? "Impossibile aggiungere l'extra.");
+                            return;
+                          }
+                        } else {
+                          courtSessions.addExtra(session.id, player.id, p.id);
+                        }
+
                         toast.success(
                           `${p.name} addebitato a ${player.name}`,
                         );
