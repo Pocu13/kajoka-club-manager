@@ -1644,8 +1644,6 @@ export const courtSessions = {
 
       const originalIds = sourceTransactions.map((tx) => tx.id);
 
-      const originalIds = sourceTransactions.map((tx) => tx.id);
-
       adjustments.push({
         id: nid("rett"),
         ts: new Date().toISOString(),
