@@ -991,7 +991,7 @@ export function SessionDrawer({
               </div>
 
               <div className="space-y-2">
-                {session.players.map((p) => {
+                {session.players.map((p, index) => {
                   const active = player?.id === p.id;
 
                   return (
@@ -1015,7 +1015,7 @@ export function SessionDrawer({
                               : "bg-surface-highest text-muted-foreground",
                           )}
                         >
-                          {p.id.toUpperCase()}
+                         {`G${index + 1}`}
                         </span>
 
                         <div className="min-w-0 flex-1">
