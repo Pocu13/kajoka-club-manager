@@ -1126,7 +1126,7 @@ export function SessionDrawer({
               )}
             />
           </div>
-            </Panel>
+       
         ) : (
           <div className="space-y-5">
             <Panel className="p-4">
