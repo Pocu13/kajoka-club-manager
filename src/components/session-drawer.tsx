@@ -704,9 +704,10 @@ const fixedBookingParticipants = court.type === "padel" && !displayOnly;
                               <Badge tone="warning">DA PAGARE</Badge>
                             )}
 
-                            {!fixedBookingParticipants &&
-                              bookingParticipants.length > 2 &&
-                              !item.paid && (
+                           {(!displayOnly || editingHistoricalBooking) &&
+  !fixedBookingParticipants &&
+  bookingParticipants.length > (displayOnly ? 1 : 2) &&
+  !item.paid && (
                                 <button
                                   type="button"
                                   className="rounded p-1 text-muted-foreground hover:text-destructive"
@@ -727,7 +728,7 @@ const fixedBookingParticipants = court.type === "padel" && !displayOnly;
                                 min="0"
                                 step="0.01"
                                 value={String(item.quota)}
-                                disabled={item.paid}
+                                disabled={item.paid || (displayOnly && !editingHistoricalBooking)}
                                 onChange={(event) =>
                                   updateBookingParticipant(item.id, {
                                     quota: Math.max(
@@ -770,14 +771,29 @@ const fixedBookingParticipants = court.type === "padel" && !displayOnly;
                       quote degli altri.
                     </p>
                   </div>
-
-                  <Btn
-                    variant="primary"
-                    className="w-full"
-                    onClick={saveActiveBooking}
-                  >
-                    Salva prezzo, giocatori e quote
-                  </Btn>
+{!displayOnly ? (
+  <Btn
+    variant="primary"
+    className="w-full"
+    onClick={saveActiveBooking}
+  >
+    Salva prezzo, giocatori e quote
+  </Btn>
+) : (
+  <Btn
+    variant={editingHistoricalBooking ? "primary" : "outline"}
+    className="w-full"
+    onClick={() => {
+      if (editingHistoricalBooking) {
+        saveActiveBooking();
+      } else {
+        setEditingHistoricalBooking(true);
+      }
+    }}
+  >
+    {editingHistoricalBooking ? "Salva modifiche" : "Modifica"}
+  </Btn>
+)}
                 </Panel>
               </>
             )}
