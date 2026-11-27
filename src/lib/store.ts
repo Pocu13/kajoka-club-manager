@@ -1325,141 +1325,429 @@ export const courtSessions = {
 
     return { ok: true };
       },
-  /**
-   * Modifica esclusivamente i dettagli di una sessione conclusa.
-   * Le quote e i nomi dei giocatori pagati restano invariati.
-   * Le transazioni e i movimenti contabili non vengono toccati.
+    /**
+   * Aggiorna una partita conclusa e registra le relative rettifiche.
+   * Le transazioni originali non vengono mai modificate.
    */
-      updateClosedDetails(
-      sessionId: string,
-      input: {
-        total: number;
-        players: Array<{
-          id: string;
-          name: string;
-          quota: number;
-          paid: boolean;
-          extras: Player["extras"];
-        }>;
-      },
-    ): { ok: boolean; error?: string } {
-      const db = getDB();
-      const session = db.sessions.find((item) => item.id === sessionId);
+  updateClosedDetails(
+    sessionId: string,
+    input: {
+      total: number;
+      players: Array<{
+        id: string;
+        name: string;
+        quota: number;
+        paid: boolean;
+        extras: Player["extras"];
+      }>;
+    },
+  ): { ok: boolean; error?: string } {
+    const db = getDB();
+    const session = db.sessions.find((item) => item.id === sessionId);
 
-      if (!session) {
-        return { ok: false, error: "Partita non trovata." };
+    if (!session) {
+      return { ok: false, error: "Partita non trovata." };
+    }
+
+    if (!session.closed) {
+      return {
+        ok: false,
+        error: "Puoi modificare soltanto una partita conclusa.",
+      };
+    }
+
+    if (!Number.isFinite(input.total) || input.total < 0) {
+      return { ok: false, error: "Il prezzo totale non è valido." };
+    }
+
+    if (!Array.isArray(input.players)) {
+      return { ok: false, error: "Elenco giocatori non valido." };
+    }
+
+    const submittedIds = new Set<string>();
+
+    for (const item of input.players) {
+      if (!item || typeof item.id !== "string" || !item.id) {
+        return { ok: false, error: "Un giocatore non è valido." };
       }
 
-      if (!session.closed) {
+      if (submittedIds.has(item.id)) {
         return {
           ok: false,
-          error: "Puoi modificare da qui soltanto una partita conclusa.",
+          error: "Un giocatore è presente più di una volta.",
         };
       }
 
-      if (!Number.isFinite(input.total) || input.total < 0) {
-        return { ok: false, error: "Il prezzo totale non è valido." };
+      submittedIds.add(item.id);
+
+      if (!session.players.some((player) => player.id === item.id)) {
+        return {
+          ok: false,
+          error: "Uno dei giocatori non appartiene a questa partita.",
+        };
       }
 
-      if (!Array.isArray(input.players)) {
-        return { ok: false, error: "Elenco giocatori non valido." };
+      if (
+        typeof item.name !== "string" ||
+        !item.name.trim() ||
+        !Number.isFinite(item.quota) ||
+        item.quota < 0 ||
+        typeof item.paid !== "boolean" ||
+        !Array.isArray(item.extras)
+      ) {
+        return {
+          ok: false,
+          error: "Controlla i dati di uno dei giocatori.",
+        };
       }
 
-      const submittedIds = new Set<string>();
-
-      for (const item of input.players) {
-        if (!item || typeof item.id !== "string" || !item.id) {
-          return { ok: false, error: "Un giocatore non è valido." };
-        }
-
-        if (submittedIds.has(item.id)) {
+      for (const extra of item.extras) {
+        if (
+          !extra ||
+          typeof extra.productId !== "string" ||
+          typeof extra.name !== "string" ||
+          !Number.isFinite(extra.qty) ||
+          extra.qty <= 0 ||
+          !Number.isFinite(extra.price) ||
+          extra.price < 0 ||
+          !Number.isFinite(extra.cost) ||
+          extra.cost < 0
+        ) {
           return {
             ok: false,
-            error: "Un giocatore è presente più di una volta.",
+            error: "Uno degli extra non è valido.",
           };
         }
+      }
+    }
 
-        submittedIds.add(item.id);
+    const updatedPlayers = session.players.map((player) => {
+      const updated = input.players.find((item) => item.id === player.id);
 
-        const existingPlayer = session.players.find(
-          (player) => player.id === item.id,
+      if (!updated) {
+        return {
+          ...player,
+          extras: player.extras.map((extra) => ({ ...extra })),
+        };
+      }
+
+      return {
+        ...player,
+        name: updated.name.trim(),
+        quota: round(updated.quota),
+        paid: updated.paid,
+        extras: updated.extras.map((extra) => ({ ...extra })),
+      };
+    });
+
+    const affectsPaidLedger = session.players.some((oldPlayer) => {
+      const updated = updatedPlayers.find(
+        (player) => player.id === oldPlayer.id,
+      );
+
+      if (!updated) return false;
+
+      if (oldPlayer.paid !== updated.paid) return true;
+      if (!oldPlayer.paid) return false;
+
+      return (
+        round(oldPlayer.quota) !== round(updated.quota) ||
+        JSON.stringify(oldPlayer.extras) !==
+          JSON.stringify(updated.extras)
+      );
+    });
+
+    const linkedTransactions = db.transactions.filter(
+      (tx) =>
+        !tx.cancelled &&
+        tx.kind === "campo" &&
+        (tx.sessionId === sessionId ||
+          (!!session.bookingId && tx.bookingId === session.bookingId)),
+    );
+
+    const legacyTransactions = linkedTransactions.filter(
+      (tx) => !tx.adjustmentOf && !Array.isArray(tx.playerPayments),
+    );
+
+    if (affectsPaidLedger && legacyTransactions.length > 0) {
+      return {
+        ok: false,
+        error:
+          "Questa partita contiene vecchi incassi senza dettaglio contabile per giocatore. Per sicurezza non posso rettificarli automaticamente.",
+      };
+    }
+
+    const adjustments: Transaction[] = [];
+    const operator = currentOperator(db);
+
+    for (const player of updatedPlayers) {
+      const entries = linkedTransactions.flatMap(
+        (tx) =>
+          (tx.playerPayments ?? []).filter(
+            (payment) => payment.playerId === player.id,
+          ),
+      );
+
+      const ledgerQuota = round(
+        entries.reduce((sum, payment) => sum + payment.quota, 0),
+      );
+
+      const targetQuota = player.paid ? round(player.quota) : 0;
+      const deltaQuota = round(targetQuota - ledgerQuota);
+
+      const itemDeltas = new Map<string, TxItem>();
+
+      const addItemDelta = (item: TxItem, direction: number) => {
+        const key = JSON.stringify([
+          item.productId,
+          item.name,
+          item.price,
+          item.cost,
+        ]);
+
+        const current = itemDeltas.get(key);
+
+        itemDeltas.set(key, {
+          ...item,
+          qty: round((current?.qty ?? 0) + item.qty * direction),
+        });
+      };
+
+      for (const payment of entries) {
+        for (const extra of payment.extras) {
+          addItemDelta(extra, -1);
+        }
+      }
+
+      if (player.paid) {
+        for (const extra of player.extras) {
+          addItemDelta(
+            {
+              productId: extra.productId,
+              name: extra.name,
+              qty: extra.qty,
+              price: extra.price,
+              cost: extra.cost,
+            },
+            1,
+          );
+        }
+      }
+
+      const deltaItems = [...itemDeltas.values()].filter(
+        (item) => Math.abs(item.qty) > 0.0001,
+      );
+
+      const deltaAmount = round(
+        deltaQuota +
+          deltaItems.reduce(
+            (sum, item) => sum + item.price * item.qty,
+            0,
+          ),
+      );
+
+      if (
+        Math.abs(deltaQuota) < 0.005 &&
+        deltaItems.length === 0
+      ) {
+        continue;
+      }
+
+      const sourceTransactions = linkedTransactions.filter(
+        (tx) =>
+          !tx.adjustmentOf &&
+          tx.playerPayments?.some(
+            (payment) => payment.playerId === player.id,
+          ),
+      );
+
+      if (sourceTransactions.length === 0) {
+        return {
+          ok: false,
+          error:
+            `Non trovo un incasso originale collegato a ${player.name}. ` +
+            "Non posso registrare una rettifica senza una transazione di origine.",
+        };
+      }
+
+      let originalCash = 0;
+      let originalCard = 0;
+
+      for (const tx of sourceTransactions) {
+        const playerAmount = round(
+          (tx.playerPayments ?? [])
+            .filter((payment) => payment.playerId === player.id)
+            .reduce((sum, payment) => sum + payment.amount, 0),
         );
 
-        if (!existingPlayer) {
-          return {
-            ok: false,
-            error: "Uno dei giocatori non appartiene a questa partita.",
-          };
-        }
-
-        if (typeof item.name !== "string") {
-          return { ok: false, error: "Il nome di un giocatore non è valido." };
-        }
-
-        if (!Number.isFinite(item.quota) || item.quota < 0) {
-          return { ok: false, error: "Una delle quote non è valida." };
-        }
-
-        if (typeof item.paid !== "boolean") {
-          return {
-            ok: false,
-            error: "Lo stato del pagamento non è valido.",
-          };
-        }
-
-        if (!Array.isArray(item.extras)) {
-          return { ok: false, error: "Gli extra di un giocatore non sono validi." };
-        }
-
-        for (const extra of item.extras) {
-          if (
-            !extra ||
-            typeof extra.productId !== "string" ||
-            typeof extra.name !== "string" ||
-            !Number.isFinite(extra.qty) ||
-            extra.qty <= 0 ||
-            !Number.isFinite(extra.price) ||
-            extra.price < 0 ||
-            !Number.isFinite(extra.cost) ||
-            extra.cost < 0
-          ) {
-            return { ok: false, error: "Uno degli extra non è valido." };
-          }
+        if (tx.amount > 0) {
+          originalCash += tx.cash * (playerAmount / tx.amount);
+          originalCard += tx.card * (playerAmount / tx.amount);
         }
       }
 
-      set((d) => {
-        d.sessions = d.sessions.map((current) => {
-          if (current.id !== sessionId || !current.closed) {
-            return current;
-          }
+      const originalSplit = originalCash + originalCard;
 
-          return {
-            ...current,
-            total: round(input.total),
-            players: current.players.map((player) => {
-              const updated = input.players.find(
-                (item) => item.id === player.id,
-              );
+      const cashDelta =
+        originalSplit > 0
+          ? round(deltaAmount * (originalCash / originalSplit))
+          : 0;
 
-              if (!updated) {
-                return player;
-              }
+      const cardDelta =
+        originalSplit > 0
+          ? round(deltaAmount - cashDelta)
+          : 0;
 
-              return {
-                ...player,
-                name: updated.name,
-                quota: round(updated.quota),
-                paid: updated.paid,
-                extras: updated.extras.map((extra) => ({ ...extra })),
-              };
-            }),
-          };
-        });
+      const method: PaymentMethod =
+        Math.abs(cashDelta) > 0.005 &&
+        Math.abs(cardDelta) > 0.005
+          ? "misto"
+          : Math.abs(cashDelta) > 0.005
+            ? "contanti"
+            : Math.abs(cardDelta) > 0.005
+              ? "carta"
+              : sourceTransactions[0].method;
+
+      const originalIds = sourceTransactions.map((tx) => tx.id);
+
+      adjustments.push({
+        id: nid("rett"),
+        ts: new Date().toISOString(),
+        kind: "campo",
+        label: `Rettifica partita · ${player.name}`,
+        items: deltaItems,
+        subtotal: deltaAmount,
+        discount: 0,
+        amount: deltaAmount,
+        method,
+        cash: cashDelta,
+        card: cardDelta,
+        operatorId: operator.id,
+        operatorName: operator.name,
+        courtId: session.courtId,
+        sessionId: session.id,
+        bookingId: session.bookingId,
+        playerName: player.name,
+        playerIds: [player.id],
+        playerPayments: [
+          {
+            playerId: player.id,
+            playerName: player.name,
+            quota: deltaQuota,
+            extras: deltaItems,
+            amount: deltaAmount,
+          },
+        ],
+        adjustmentOf: originalIds[0],
+        adjustmentType:
+          deltaAmount < -0.005 ? "storno" : "integrazione",
+        note:
+          `Rettifica collegata alle operazioni originali: ${originalIds.join(", ")}.`,
+        cancelled: false,
       });
+    }
 
-      return { ok: true };
-    },
+    const stockChanges = new Map<string, number>();
+
+    for (const player of session.players) {
+      for (const extra of player.extras) {
+        stockChanges.set(
+          extra.productId,
+          round(
+            (stockChanges.get(extra.productId) ?? 0) - extra.qty,
+          ),
+        );
+      }
+    }
+
+    for (const player of updatedPlayers) {
+      for (const extra of player.extras) {
+        stockChanges.set(
+          extra.productId,
+          round(
+            (stockChanges.get(extra.productId) ?? 0) + extra.qty,
+          ),
+        );
+      }
+    }
+
+    for (const [productId, change] of stockChanges) {
+      if (Math.abs(change) < 0.0001) continue;
+
+      const product = db.products.find(
+        (item) => item.id === productId,
+      );
+
+      if (!product) continue;
+
+      if (
+        change > 0 &&
+        !db.settings.negativeStock &&
+        product.stock < change
+      ) {
+        return {
+          ok: false,
+          error:
+            `Scorte insufficienti per ${product.name}. ` +
+            "Non posso aggiungere questo extra alla partita.",
+        };
+      }
+    }
+
+    set((d) => {
+      d.sessions = d.sessions.map((current) =>
+        current.id === sessionId
+          ? {
+              ...current,
+              total: round(input.total),
+              players: updatedPlayers,
+            }
+          : current,
+      );
+
+      if (session.bookingId) {
+        d.bookings = d.bookings.map((booking) =>
+          booking.id === session.bookingId
+            ? {
+                ...booking,
+                participants: updatedPlayers,
+                players: updatedPlayers.map((player) => player.name),
+                price: round(
+                  updatedPlayers.reduce(
+                    (sum, player) => sum + player.quota,
+                    0,
+                  ),
+                ),
+              }
+            : booking,
+        );
+      }
+
+      d.transactions = [...adjustments, ...d.transactions];
+
+      for (const [productId, change] of stockChanges) {
+        if (Math.abs(change) < 0.0001) continue;
+
+        const product = d.products.find(
+          (item) => item.id === productId,
+        );
+
+        if (!product) continue;
+
+        pushMovement(
+          d,
+          product,
+          change > 0 ? "prodotto_campo" : "storno",
+          -change,
+          "Partita · Rettifica extra",
+          sessionId,
+          "Rettifica automatica delle scorte dopo la modifica della partita.",
+        );
+      }
+    });
+
+    return { ok: true };
+  },
 };
 /* ---------------------------------- users --------------------------------- */
 
