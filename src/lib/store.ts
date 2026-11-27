@@ -932,7 +932,58 @@ export const courtSessions = {
       );
     });
   },
+  deactivateBooking(bookingId: string): { ok: boolean; error?: string } {
+    const db = getDB();
+    const session = db.sessions.find(
+      (item) => item.bookingId === bookingId && !item.closed,
+    );
 
+    if (!session) {
+      return {
+        ok: false,
+        error: "Nessuna sessione attiva collegata alla prenotazione.",
+      };
+    }
+
+    set((d) => {
+      const currentSession = d.sessions.find(
+        (item) => item.id === session.id,
+      );
+
+      if (!currentSession) return;
+
+      const participants = currentSession.players.map((player) => ({
+        ...player,
+        extras: [...(player.extras ?? [])],
+      }));
+
+      d.bookings = d.bookings.map((booking) =>
+        booking.id === bookingId
+          ? {
+              ...booking,
+              participants,
+              players: participants.map((player) => player.name),
+            }
+          : booking,
+      );
+
+      d.transactions = d.transactions.map((transaction) =>
+        transaction.sessionId === currentSession.id
+          ? {
+              ...transaction,
+              sessionId: undefined,
+              bookingId,
+            }
+          : transaction,
+      );
+
+      d.sessions = d.sessions.filter(
+        (item) => item.id !== currentSession.id,
+      );
+    });
+
+    return { ok: true };
+  },
   /**
    * Modifica esclusivamente i dettagli di una sessione conclusa.
    * Le quote e i nomi dei giocatori pagati restano invariati.
