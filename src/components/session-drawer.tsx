@@ -646,16 +646,14 @@ const fixedBookingParticipants = court.type === "padel" && !displayOnly;
                     Modifica prenotazione
                   </div>
 
-                  <Field label="Prezzo totale prenotazione (€)">
-                    <Input
-                      type="number"
-                      min="0"
-                      step="0.01"
-                      value={bookingPrice}
-                      onChange={(event) =>
-                        setBookingPrice(event.target.value)
-                      }
-                    />
+                  <Input
+  type="number"
+  min="0"
+  step="0.01"
+  value={bookingPrice}
+  disabled={displayOnly && !editingHistoricalBooking}
+  onChange={(event) => setBookingPrice(event.target.value)}
+/>
                   </Field>
 
                   <div>
@@ -666,16 +664,9 @@ const fixedBookingParticipants = court.type === "padel" && !displayOnly;
 
                       {!fixedBookingParticipants &&
                         bookingParticipants.length <
-                          bookingParticipantLimit && (
-                          <Btn
-                            variant="outline"
-                            size="sm"
-                            onClick={addBookingParticipant}
-                          >
-                            <Plus className="size-3" /> Aggiungi
-                          </Btn>
-                        )}
-                    </div>
+                        {(!displayOnly || editingHistoricalBooking) &&
+  !fixedBookingParticipants &&
+  bookingParticipants.length < bookingParticipantLimit && (
 
                     <div className="space-y-2">
                       {bookingParticipants.map((item, index) => (
