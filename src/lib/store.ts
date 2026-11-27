@@ -1066,7 +1066,35 @@ export const courtSessions = {
         bookingId,
         playerName: currentTargets.map((player) => player.name).join(", "),
                 playerIds: currentTargets.map((player) => player.id),
+                playerPayments: currentTargets.map((player) => {
+          const extras = player.extras.map((extra) => ({
+            productId: extra.productId,
+            name: extra.name,
+            qty: extra.qty,
+            price: extra.price,
+            cost: extra.cost,
+          }));
+          const quota =
+            currentTargets.length === 1
+              ? currentRequestedQuota
+              : player.quota;
+
+          return {
+            playerId: player.id,
+            playerName: player.name,
+            quota,
+            extras,
+            amount: round(
+              quota +
+                extras.reduce(
+                  (sum, extra) => sum + extra.price * extra.qty,
+                  0,
+                ),
+            ),
+          };
+        }),
         note: "Pagamento anticipato quota campo ed extra.",
+        
         cancelled: false,
       };
 
