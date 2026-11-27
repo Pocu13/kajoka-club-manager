@@ -794,8 +794,6 @@ export const courtSessions = {
 
     return { ok: true };
   },
-
-  payPlayers(
    
   payPlayers(
     sessionId: string,
