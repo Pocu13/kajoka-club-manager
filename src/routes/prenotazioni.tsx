@@ -1614,34 +1614,31 @@ function BookingDetail({
                   {player.name || "Nome da inserire"}
                 </span>
 
-                <div
-                  className="w-24 shrink-0"
-                  onClick={(event) =>
-                    event.stopPropagation()
-                  }
+                               <div
+                  className="flex shrink-0 items-center gap-1"
+                  onClick={(event) => event.stopPropagation()}
                 >
-                  <Input
-                    type="number"
-                    min="0"
-                    step="0.01"
-                    value={String(player.quota)}
+                  <button
+                    type="button"
+                    className="rounded-md border border-border px-2 py-1 disabled:opacity-40"
+                    disabled={player.paid || player.quota < 0.5}
+                    onClick={() => updatePlayerQuota(player.id, -0.5)}
+                  >
+                    −
+                  </button>
+
+                  <span className="mono min-w-14 text-center text-sm">
+                    {eur(player.quota)}
+                  </span>
+
+                  <button
+                    type="button"
+                    className="rounded-md border border-border px-2 py-1 disabled:opacity-40"
                     disabled={player.paid}
-                    onChange={(event) =>
-                      setParticipants((current) =>
-                        current.map((item) =>
-                          item.id === player.id
-                            ? {
-                                ...item,
-                                quota: Math.max(
-                                  0,
-                                  Number(event.target.value) || 0,
-                                ),
-                              }
-                            : item,
-                        ),
-                      )
-                    }
-                  />
+                    onClick={() => updatePlayerQuota(player.id, 0.5)}
+                  >
+                    +
+                  </button>
                 </div>
 
                 {player.paid && (
