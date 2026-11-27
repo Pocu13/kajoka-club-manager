@@ -97,6 +97,7 @@ export function SessionDrawer({
   // Dati modificabili del resoconto di una partita conclusa.
   const [closedTotal, setClosedTotal] = useState("0");
   const [closedPlayers, setClosedPlayers] = useState<Player[]>([]);
+  const [editingClosedDetails, setEditingClosedDetails] = useState(false);
 
   useEffect(() => {
     if (!booking) {
