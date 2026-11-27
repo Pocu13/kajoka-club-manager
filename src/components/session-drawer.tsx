@@ -444,16 +444,33 @@ export function SessionDrawer({
                   </Btn>
                 </div>
 
-                <Btn
+                               <Btn
                   variant="subtle"
                   className="w-full"
                   onClick={() => {
+                    if (booking) {
+                      const result = courtSessions.deactivateBooking(booking.id);
+
+                      if (!result.ok) {
+                        toast.error(
+                          result.error ?? "Impossibile disattivare la prenotazione.",
+                        );
+                        return;
+                      }
+
+                      toast.success("Prenotazione disattivata. Campo liberato.");
+                      onClose();
+                      return;
+                    }
+
                     courtSessions.close(session.id);
                     toast.success(`Sessione ${court.name} chiusa`);
                     onClose();
                   }}
                 >
-                  Chiudi sessione e libera il campo
+                  {booking
+                    ? "Disattiva prenotazione"
+                    : "Chiudi sessione e libera il campo"}
                 </Btn>
               </div>
             )
