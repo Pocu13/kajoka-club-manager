@@ -160,19 +160,34 @@ function nextTxId(db: DB, kind: "bar" | "campo") {
  * Crea i dati iniziali dei partecipanti quando una prenotazione
  * non ha ancora una lista operativa salvata.
  */
+
+/**
+ * Crea i dati iniziali dei partecipanti in base allo sport.
+ * Padel: 4 partecipanti obbligatori.
+ * Tennis: da 2 a 4 partecipanti.
+ * Beach: da 2 a 12 partecipanti.
+ */
 function createBookingParticipants(booking: Booking, total: number): Player[] {
   const court = load().courts.find((c) => c.id === booking.courtId);
 
-  const defaultCount =
-    court?.type === "padel"
-      ? 4
-      : 2;
+  const minCount = court?.type === "padel" ? 4 : 2;
+  const maxCount =
+    court?.type === "beach"
+      ? 12
+      : court?.type === "tennis"
+        ? 4
+        : 4;
 
-  const names = booking.players.length
-    ? booking.players.slice(0, 4)
-    : Array.from({ length: defaultCount }, () => "");
+  const names = (booking.players ?? [])
+    .map((name) => name.trim())
+    .filter(Boolean)
+    .slice(0, maxCount);
 
-  const count = Math.max(defaultCount, names.length);
+  const count = Math.min(
+    maxCount,
+    Math.max(minCount, names.length),
+  );
+
   const baseQuota = round(total / count);
   let assigned = 0;
 
@@ -186,13 +201,14 @@ function createBookingParticipants(booking: Booking, total: number): Player[] {
 
     return {
       id: `g${index + 1}`,
-      name: names[index]?.trim() || `Giocatore ${index + 1}`,
+      name: names[index] || `Giocatore ${index + 1}`,
       quota,
       paid: false,
       extras: [],
     };
   });
 }
+
 
 /* ---------------------------------- auth --------------------------------- */
 
