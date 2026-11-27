@@ -419,7 +419,7 @@ export function SessionDrawer({
             )
           ) : (
             <div className="grid gap-2">
-              {booking && booking.kind !== "manutenzione" && (
+                          {booking && booking.kind !== "manutenzione" && (
                 <Btn
                   variant="primary"
                   className="w-full"
