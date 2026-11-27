@@ -1207,26 +1207,15 @@ function BookingDetail({
               <Badge tone="info">DA AI</Badge>
             )}
 
-            {canPrepay &&
-              participants.some(
-                (player) => !player.paid,
-              ) && (
+                        {!booking.cancelled &&
+              booking.kind === "partita" && (
                 <Btn
                   variant="primary"
                   size="sm"
                   className="ml-auto"
-                  onClick={() => {
-                    setPayIds(
-                      participants
-                        .filter((player) => !player.paid)
-                        .map((player) => player.id),
-                    );
-                    setPayMethod("carta");
-                    setPayCash("0");
-                    setPayOpen(true);
-                  }}
+                  onClick={onActivate}
                 >
-                  <Euro className="size-4" /> PAGA
+                  ATTIVA PRENOTAZIONE
                 </Btn>
               )}
           </div>
