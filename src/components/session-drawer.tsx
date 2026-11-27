@@ -18,6 +18,7 @@ import {
   Modal,
   Panel,
   Select,
+  Toggle,
 } from "@/components/ui-kit";
 import {
   courtSessions,
@@ -34,6 +35,9 @@ type SessionDrawerProps = {
   session: Session | null;
   booking: Booking | null;
   bookingOnly?: boolean;
+  canPayBooking?: boolean;
+  displayOnly?: boolean;
+  onToggleBookingOnly?: (enabled: boolean) => void;
   upcomingBooking: Booking | null;
   onClose: () => void;
   onStart: () => void;
@@ -45,33 +49,64 @@ export function SessionDrawer({
   session: sourceSession,
   booking,
   bookingOnly = false,
+  displayOnly = false,
+  canPayBooking = false,
+  onToggleBookingOnly,
   upcomingBooking,
   onClose,
   onStart,
   onCheckIn,
 }: SessionDrawerProps) {
+  const historicalPlayers: Player[] = sourceSession?.players?.length
+    ? sourceSession.players.map((item) => ({ ...item, extras: [...(item.extras ?? [])] }))
+    : booking?.participants?.length
+      ? booking.participants.map((item) => ({ ...item, extras: [...(item.extras ?? [])] }))
+      : (booking?.players ?? []).filter((name) => name.trim()).map((name, index) => ({
+          id: `booking-${booking?.id ?? "historical"}-player-${index + 1}`,
+          name,
+          quota: Math.round(((booking?.price ?? 0) / Math.max(1, booking?.players.length ?? 1)) * 100) / 100,
+          paid: false,
+          extras: [],
+        }));
+
   const session: Session | null =
-    bookingOnly && booking
+    displayOnly && booking
       ? {
-          id: `booking-${booking.id}`,
+          id: `historical-${booking.id}`,
           courtId: booking.courtId,
-          startedAt: new Date(
-            `${booking.date}T${booking.start}:00`,
-          ).toISOString(),
-                 durationMin: Math.max(
-            30,
-            (Number(booking.end.slice(0, 2)) * 60 +
-              Number(booking.end.slice(3, 5))) -
-              (Number(booking.start.slice(0, 2)) * 60 +
-                Number(booking.start.slice(3, 5))),
-          ),
+          startedAt: new Date(`${booking.date}T${booking.start}:00`).toISOString(),
+          durationMin: Math.max(
+  30,
+  (Number(booking.end.slice(0, 2)) * 60 +
+    Number(booking.end.slice(3, 5))) -
+    (Number(booking.start.slice(0, 2)) * 60 +
+      Number(booking.start.slice(3, 5))),
+),
           pricingMode: "campo",
           total: booking.price,
-          players: booking.participants ?? [],
-          closed: false,
+          players: historicalPlayers,
+          closed: true,
           bookingId: booking.id,
         }
-      : sourceSession;
+      : bookingOnly && booking
+        ? {
+            id: `booking-${booking.id}`,
+            courtId: booking.courtId,
+            startedAt: new Date(`${booking.date}T${booking.start}:00`).toISOString(),
+            durationMin: Math.max(
+  30,
+  (Number(booking.end.slice(0, 2)) * 60 +
+    Number(booking.end.slice(3, 5))) -
+    (Number(booking.start.slice(0, 2)) * 60 +
+      Number(booking.start.slice(3, 5))),
+),
+            pricingMode: "campo",
+            total: booking.price,
+            players: booking.participants ?? [],
+            closed: false,
+            bookingId: booking.id,
+          }
+        : sourceSession;
 
     const db = useDB();
   const [selPlayer, setSelPlayer] = useState<string | null>(null);
@@ -90,7 +125,8 @@ export function SessionDrawer({
   // Dati modificabili del resoconto di una partita conclusa.
   const [closedTotal, setClosedTotal] = useState("0");
   const [closedPlayers, setClosedPlayers] = useState<Player[]>([]);
-
+  const [editingClosedDetails, setEditingClosedDetails] = useState(false);
+  const [editingHistoricalBooking, setEditingHistoricalBooking] = useState(false);
   useEffect(() => {
     if (!booking) {
       setBookingParticipants([]);
@@ -105,17 +141,16 @@ export function SessionDrawer({
     )?.type;
 
     const maxParticipants = courtType === "beach" ? 12 : 4;
-    const fixedParticipants = courtType === "padel";
-    const count = fixedParticipants
-      ? 4
-      : Math.max(
-          2,
-          Math.min(
-            maxParticipants,
-            booking.participants?.length || booking.players.length || 2,
-          ),
-        );
+const fixedParticipants = courtType === "padel";
 
+const existingCount =
+  booking.participants?.length || booking.players.length || 0;
+
+const count = displayOnly
+  ? Math.max(1, Math.min(maxParticipants, existingCount || 1))
+  : fixedParticipants
+    ? 4
+    : Math.max(2, Math.min(maxParticipants, existingCount || 2));
     const initialParticipants: Player[] = Array.from(
       { length: count },
       (_, index) => {
@@ -142,20 +177,25 @@ export function SessionDrawer({
     setBookingParticipants(initialParticipants);
   }, [booking?.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  useEffect(() => {
+   useEffect(() => {
     if (!session?.closed) {
       setClosedTotal("0");
       setClosedPlayers([]);
+      setEditingClosedDetails(false);
+      setSelPlayer(null);
       return;
     }
 
     setClosedTotal(String(session.total));
-    setClosedPlayers(
-      session.players.map((player) => ({
-        ...player,
-        extras: [...(player.extras ?? [])],
-      })),
-    );
+
+    const players = session.players.map((player) => ({
+      ...player,
+      extras: [...(player.extras ?? [])],
+    }));
+
+    setClosedPlayers(players);
+    setSelPlayer(players[0]?.id ?? null);
+    setEditingClosedDetails(false);
     setPayOpen(false);
     setPayIds([]);
     setEditQuotas(false);
@@ -166,6 +206,16 @@ export function SessionDrawer({
   const player =
     session?.players.find((p) => p.id === selPlayer) ??
     session?.players[0] ??
+    null;
+    const canEditClosedDetails =
+    displayOnly &&
+    !!booking &&
+    !!session?.closed &&
+    session.bookingId === booking.id;
+
+  const selectedClosedPlayer =
+    closedPlayers.find((item) => item.id === selPlayer) ??
+    closedPlayers[0] ??
     null;
 
   const quickExtras = db.products
@@ -211,8 +261,7 @@ export function SessionDrawer({
         .filter((p) => p.paid)
         .reduce((sum, p) => sum + p.quota, 0)
     : 0;
-
-  const fixedBookingParticipants = court.type === "padel";
+const fixedBookingParticipants = court.type === "padel" && !displayOnly;
   const bookingParticipantLimit = court.type === "beach" ? 12 : 4;
 
   const updateBookingParticipant = (
@@ -255,7 +304,7 @@ export function SessionDrawer({
 
     if (
       fixedBookingParticipants ||
-      bookingParticipants.length <= 2 ||
+     bookingParticipants.length <= (displayOnly ? 1 : 2) ||
       target?.paid
     ) {
       return;
@@ -269,11 +318,15 @@ export function SessionDrawer({
   const saveActiveBooking = () => {
     if (!booking) return;
 
-    const names = bookingParticipants.map((item) =>
+    const participantsToSave = displayOnly
+      ? bookingParticipants.filter((item) => item.name.trim())
+      : bookingParticipants;
+
+    const names = participantsToSave.map((item) =>
       item.name.trim(),
     );
 
-    if (names.some((name) => !name)) {
+    if (!displayOnly && names.some((name) => !name)) {
       toast.error("Inserisci il nome di tutti i partecipanti.");
       return;
     }
@@ -285,18 +338,15 @@ export function SessionDrawer({
       return;
     }
 
-    for (const item of bookingParticipants) {
-      if (
-        !Number.isFinite(item.quota) ||
-        item.quota < 0
-      ) {
+    for (const item of participantsToSave) {
+      if (!Number.isFinite(item.quota) || item.quota < 0) {
         toast.error(`Controlla la quota di ${item.name || "un giocatore"}.`);
         return;
       }
     }
 
     const result = reservations.update(booking.id, {
-      participants: bookingParticipants,
+      participants: participantsToSave,
       players: names,
       price: Math.round(price * 100) / 100,
     });
@@ -308,24 +358,85 @@ export function SessionDrawer({
       return;
     }
 
-    toast.success("Prezzo, partecipanti e quote salvati.");
+    setEditingHistoricalBooking(false);
+    toast.success("Prezzo, giocatori e quote salvati.");
   };
 
-  const updateClosedPlayer = (
+      const updateClosedPlayer = (
     playerId: string,
-    patch: Partial<Pick<Player, "name" | "quota">>,
+    patch: Partial<
+      Pick<Player, "name" | "quota" | "paid" | "extras">
+    >,
   ) => {
+    if (!editingClosedDetails || !canEditClosedDetails) return;
+
     setClosedPlayers((current) =>
       current.map((item) =>
-        item.id === playerId && !item.paid
+        item.id === playerId
           ? { ...item, ...patch }
           : item,
       ),
     );
   };
 
-  const saveClosedSession = () => {
-    if (!session?.closed) return;
+  const updateClosedExtra = (
+    playerId: string,
+    productId: string,
+    patch: Partial<Player["extras"][number]>,
+  ) => {
+    const item = closedPlayers.find((player) => player.id === playerId);
+    if (!item) return;
+
+    updateClosedPlayer(playerId, {
+      extras: item.extras.map((extra) =>
+        extra.productId === productId
+          ? { ...extra, ...patch }
+          : extra,
+      ),
+    });
+  };
+  const removeClosedExtra = (
+    playerId: string,
+    productId: string,
+  ) => {
+    const item = closedPlayers.find((player) => player.id === playerId);
+    if (!item) return;
+    updateClosedPlayer(playerId, {
+      extras: item.extras.filter((extra) => extra.productId !== productId),
+    });
+  };
+
+  const addClosedPlayer = () => {
+    if (!editingClosedDetails || closedPlayers.length >= (court?.type === "beach" ? 12 : 4)) return;
+    setClosedPlayers((current) => [...current, {
+      id: `historical-${booking?.id ?? "session"}-player-${Date.now()}`,
+      name: "", quota: 0, paid: false, extras: [],
+    }]);
+  };
+
+  const removeClosedPlayer = (playerId: string) => {
+    if (!editingClosedDetails) return;
+    setClosedPlayers((current) => current.filter((item) => item.id !== playerId));
+  };
+
+  const addClosedExtra = (playerId: string, product: (typeof quickExtras)[number]) => {
+    const item = closedPlayers.find((player) => player.id === playerId);
+    if (!item || !editingClosedDetails) return;
+    const existing = item.extras.find((extra) => extra.productId === product.id);
+    updateClosedPlayer(playerId, {
+      extras: existing
+        ? item.extras.map((extra) => extra.productId === product.id ? { ...extra, qty: extra.qty + 1 } : extra)
+        : [...item.extras, {
+            productId: product.id, name: product.name, qty: 1,
+            price: product.price, cost: product.cost,
+          }],
+    });
+  };
+
+    const saveClosedSession = () => {
+    if (!canEditClosedDetails || !editingClosedDetails || !session?.closed) {
+      return;
+    }
 
     const total = Number(closedTotal.replace(",", "."));
 
@@ -334,35 +445,53 @@ export function SessionDrawer({
       return;
     }
 
-    for (const item of closedPlayers) {
-      if (item.paid) continue;
-
-      if (!item.name.trim()) {
-        toast.error("Inserisci il nome di tutti i giocatori non pagati.");
-        return;
-      }
-
-      if (!Number.isFinite(item.quota) || item.quota < 0) {
-        toast.error(`Controlla la quota di ${item.name || "un giocatore"}.`);
-        return;
-      }
-    }
-
-    const result = courtSessions.updateClosedDetails(session.id, {
-      total: Math.round(total * 100) / 100,
-      players: closedPlayers.map((item) => ({
+    const playersToSave = closedPlayers
+      .filter((item) => item.name.trim())
+      .map((item) => ({
         id: item.id,
         name: item.name.trim(),
         quota: item.quota,
-      })),
-    });
+        paid: item.paid,
+        extras: item.extras,
+      }));
 
-    if (!result.ok) {
-      toast.error(result.error ?? "Impossibile salvare il resoconto.");
-      return;
+    for (const item of playersToSave) {
+      if (!Number.isFinite(item.quota) || item.quota < 0) {
+        toast.error(`Controlla la quota di ${item.name}.`);
+        return;
+      }
+
+      for (const extra of item.extras) {
+        if (
+          !Number.isFinite(extra.qty) ||
+          extra.qty <= 0 ||
+          !Number.isFinite(extra.price) ||
+          extra.price < 0
+        ) {
+          toast.error(`Controlla gli extra di ${item.name}.`);
+          return;
+        }
+      }
     }
 
-    toast.success("Resoconto della partita aggiornato.");
+    if (!booking) {
+      toast.error("Prenotazione non trovata.");
+      return;
+    }
+    const names = playersToSave.map((item) => item.name);
+    const result = reservations.update(booking.id, {
+      participants: playersToSave,
+      players: names,
+      price: Math.round(total * 100) / 100,
+    });
+    if (!result.ok) {
+      toast.error(result.error ?? "Impossibile salvare la prenotazione.");
+      return;
+    }
+    setClosedPlayers(playersToSave);
+    setClosedTotal(String(Math.round(total * 100) / 100));
+    setEditingClosedDetails(false);
+    toast.success("Modifiche della partita salvate.");
   };
 
   return (
@@ -378,10 +507,10 @@ export function SessionDrawer({
               ? `Partita conclusa · ${fmtTime(session.startedAt)} · ${session.players.length} giocatori`
               : `Sessione attiva dalle ${fmtTime(session.startedAt)} · ${session.players.length} giocatori`
             : booking
-              ? `Prenotazione attiva ${booking.start}–${booking.end} · ${booking.title}`
+             ? `${displayOnly ? "Prenotazione passata" : "Prenotazione attiva"} ${booking.start}–${booking.end} · ${booking.title}`
               : `Campo libero · ${eur(court.hourlyPrice)} / ora`
         }
-                footer={
+               footer={displayOnly ? null : (
           session ? (
             session.closed ? (
               <div className="rounded-lg border border-border bg-surface-container p-3 text-center text-sm text-muted-foreground">
@@ -503,7 +632,7 @@ export function SessionDrawer({
             )
           ) : (
             <div className="grid gap-2">
-            
+
 
               <Btn
                 variant={booking ? "subtle" : "primary"}
@@ -520,8 +649,20 @@ export function SessionDrawer({
               </Btn>
             </div>
           )
-        }
+     )}
       >
+                {booking &&
+          canPayBooking &&
+          onToggleBookingOnly && (
+            <Panel className="p-3">
+              <Toggle
+                checked={bookingOnly}
+                onChange={onToggleBookingOnly}
+                label="PAGA"
+                hint="Attiva o disattiva la scheda operativa della prenotazione."
+              />
+            </Panel>
+          )}
         {!session ? (
           <div className="space-y-4">
             {booking && (
@@ -530,7 +671,7 @@ export function SessionDrawer({
                   <div className="flex flex-wrap items-center justify-between gap-2">
                     <div>
                       <div className="label-caps text-primary">
-                        Prenotazione in corso
+                      {displayOnly ? "Prenotazione passata" : "Prenotazione in corso"}
                       </div>
                       <div className="mt-1 font-semibold">
                         {booking.title}
@@ -561,17 +702,16 @@ export function SessionDrawer({
                     Modifica prenotazione
                   </div>
 
-                  <Field label="Prezzo totale prenotazione (€)">
-                    <Input
-                      type="number"
-                      min="0"
-                      step="0.01"
-                      value={bookingPrice}
-                      onChange={(event) =>
-                        setBookingPrice(event.target.value)
-                      }
-                    />
-                  </Field>
+               <Field label="Prezzo totale prenotazione (€)">
+  <Input
+    type="number"
+    min="0"
+    step="0.01"
+    value={bookingPrice}
+    disabled={displayOnly && !editingHistoricalBooking}
+    onChange={(event) => setBookingPrice(event.target.value)}
+  />
+</Field>
 
                   <div>
                     <div className="mb-2 flex items-center justify-between gap-2">
@@ -579,19 +719,18 @@ export function SessionDrawer({
                         Giocatori e quote
                       </div>
 
-                      {!fixedBookingParticipants &&
-                        bookingParticipants.length <
-                          bookingParticipantLimit && (
-                          <Btn
-                            variant="outline"
-                            size="sm"
-                            onClick={addBookingParticipant}
-                          >
-                            <Plus className="size-3" /> Aggiungi
-                          </Btn>
-                        )}
-                    </div>
-
+                      {(!displayOnly || editingHistoricalBooking) &&
+  !fixedBookingParticipants &&
+  bookingParticipants.length < bookingParticipantLimit && (
+    <Btn
+      variant="outline"
+      size="sm"
+      onClick={addBookingParticipant}
+    >
+      <Plus className="size-3" /> Aggiungi
+    </Btn>
+  )}
+                      </div>
                     <div className="space-y-2">
                       {bookingParticipants.map((item, index) => (
                         <div
@@ -606,7 +745,7 @@ export function SessionDrawer({
                             <Input
                               value={item.name}
                               placeholder={`Giocatore ${index + 1}`}
-                              disabled={item.paid}
+                              disabled={item.paid || (displayOnly && !editingHistoricalBooking)}
                               onChange={(event) =>
                                 updateBookingParticipant(item.id, {
                                   name: event.target.value,
@@ -621,9 +760,10 @@ export function SessionDrawer({
                               <Badge tone="warning">DA PAGARE</Badge>
                             )}
 
-                            {!fixedBookingParticipants &&
-                              bookingParticipants.length > 2 &&
-                              !item.paid && (
+                           {(!displayOnly || editingHistoricalBooking) &&
+  !fixedBookingParticipants &&
+  bookingParticipants.length > (displayOnly ? 1 : 2) &&
+  !item.paid && (
                                 <button
                                   type="button"
                                   className="rounded p-1 text-muted-foreground hover:text-destructive"
@@ -631,7 +771,7 @@ export function SessionDrawer({
                                   onClick={() =>
                                     removeBookingParticipant(item.id)
                                   }
-                                >
+                                                                  >
                                   <Trash2 className="size-4" />
                                 </button>
                               )}
@@ -644,7 +784,7 @@ export function SessionDrawer({
                                 min="0"
                                 step="0.01"
                                 value={String(item.quota)}
-                                disabled={item.paid}
+                                disabled={item.paid || (displayOnly && !editingHistoricalBooking)}
                                 onChange={(event) =>
                                   updateBookingParticipant(item.id, {
                                     quota: Math.max(
@@ -687,14 +827,29 @@ export function SessionDrawer({
                       quote degli altri.
                     </p>
                   </div>
-
-                  <Btn
-                    variant="primary"
-                    className="w-full"
-                    onClick={saveActiveBooking}
-                  >
-                    Salva prezzo, giocatori e quote
-                  </Btn>
+{!displayOnly ? (
+  <Btn
+    variant="primary"
+    className="w-full"
+    onClick={saveActiveBooking}
+  >
+    Salva prezzo, giocatori e quote
+  </Btn>
+) : (
+  <Btn
+    variant={editingHistoricalBooking ? "primary" : "outline"}
+    className="w-full"
+    onClick={() => {
+      if (editingHistoricalBooking) {
+        saveActiveBooking();
+      } else {
+        setEditingHistoricalBooking(true);
+      }
+    }}
+  >
+    {editingHistoricalBooking ? "Salva modifiche" : "Modifica"}
+  </Btn>
+)}
                 </Panel>
               </>
             )}
@@ -730,174 +885,8 @@ export function SessionDrawer({
               </Panel>
             )}
           </div>
-        ) : session.closed ? (
-          <div className="space-y-5">
-            <Panel className="space-y-3 p-4">
-              <div className="flex items-center justify-between gap-2">
-                <div>
-                  <div className="label-caps text-muted-foreground">
-                    Resoconto partita
-                  </div>
-                  <div className="mt-1 text-sm font-semibold">
-                    {new Date(session.startedAt).toLocaleDateString("it-IT")} ·{" "}
-                    {fmtTime(session.startedAt)}
-                  </div>
-                </div>
-                <Badge tone="success">CONCLUSA</Badge>
-              </div>
 
-              <Field label="Prezzo totale partita (€)">
-                <Input
-                  type="number"
-                  min="0"
-                  step="0.01"
-                  value={closedTotal}
-                  onChange={(event) => setClosedTotal(event.target.value)}
-                />
-              </Field>
 
-              <p className="text-xs text-muted-foreground">
-                La modifica del prezzo totale aggiorna il resoconto, ma non
-                cambia gli incassi già registrati.
-              </p>
-            </Panel>
-                        <Panel className="space-y-3 p-4">
-              <div className="flex items-center justify-between gap-2">
-                <div className="label-caps text-muted-foreground">
-                  Giocatori e quote
-                </div>
-                <span className="text-xs text-muted-foreground">
-                  {session.players.filter((item) => item.paid).length}/
-                  {session.players.length} pagati
-                </span>
-              </div>
-
-              {closedPlayers.map((item, index) => (
-                <div
-                  key={item.id}
-                  className="rounded-lg border border-border bg-surface-container p-3"
-                >
-                  <div className="mb-2 flex items-center gap-2">
-                    <span className="mono flex size-7 shrink-0 items-center justify-center rounded-full bg-surface-highest text-xs">
-                      {index + 1}
-                    </span>
-
-                    <div className="min-w-0 flex-1">
-                      <Input
-                        value={item.name}
-                        disabled={item.paid}
-                        placeholder={`Giocatore ${index + 1}`}
-                        onChange={(event) =>
-                          updateClosedPlayer(item.id, {
-                            name: event.target.value,
-                          })
-                        }
-                      />
-                    </div>
-
-                    {item.paid ? (
-                      <Badge tone="success">PAGATO</Badge>
-                    ) : (
-                      <Badge tone="warning">DA PAGARE</Badge>
-                    )}
-                  </div>
-
-                  <div className="flex items-center gap-2 pl-9">
-                    <div className="w-32">
-                      <Input
-                        type="number"
-                        min="0"
-                        step="0.01"
-                        value={String(item.quota)}
-                        disabled={item.paid}
-                        onChange={(event) =>
-                          updateClosedPlayer(item.id, {
-                            quota: Math.max(
-                              0,
-                              Number(event.target.value) || 0,
-                            ),
-                          })
-                        }
-                      />
-                    </div>
-                    <span className="text-xs text-muted-foreground">
-                      Quota giocatore (€)
-                    </span>
-                  </div>
-
-                  {item.extras.length > 0 && (
-                    <div className="mt-3 space-y-1 rounded-lg border border-border bg-surface px-3 py-2">
-                      <div className="label-caps text-muted-foreground">
-                        Extra registrati
-                      </div>
-
-                      {item.extras.map((extra) => (
-                        <div
-                          key={extra.productId}
-                          className="mono flex items-center justify-between text-[11px]"
-                        >
-                          <span>
-                            {extra.qty}× {extra.name}
-                          </span>
-                          <span>{eur(extra.price * extra.qty)}</span>
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                </div>
-              ))}
-
-              <p className="text-xs text-muted-foreground">
-                I dati dei giocatori già pagati sono bloccati. Puoi correggere
-                i nomi e le quote dei soli giocatori non pagati.
-              </p>
-
-              <Btn
-                variant="primary"
-                className="w-full"
-                onClick={saveClosedSession}
-              >
-                Salva modifiche al resoconto
-              </Btn>
-            </Panel>
-
-            <Panel className="space-y-3 p-4">
-              <div className="flex items-center justify-between">
-                <span className="label-caps text-muted-foreground">
-                  Incasso storico quote
-                </span>
-                <span className="mono font-semibold">
-                  {eur(collected)}
-                </span>
-              </div>
-
-              <div className="flex items-center justify-between">
-                <span className="label-caps text-muted-foreground">
-                  Prezzo totale partita
-                </span>
-                <span className="mono font-semibold">
-                  {eur(session.total)}
-                </span>
-              </div>
-
-              <div className="text-xs text-muted-foreground">
-                Gli incassi storici sono mostrati a titolo informativo e non
-                vengono ricalcolati dalle modifiche del resoconto.
-              </div>
-            </Panel>
-
-            <WhatsAppShare
-              title="Invia riepilogo partita su WhatsApp"
-              text={sessionSummary(
-                {
-                  ...session,
-                  total: Number(closedTotal.replace(",", ".")) || session.total,
-                  players: closedPlayers,
-                },
-                court.name,
-              )}
-            />
-          </div>
         ) : (
           <div className="space-y-5">
             <Panel className="p-4">
@@ -939,49 +928,135 @@ export function SessionDrawer({
               </div>
             </Panel>
 
-            <WhatsAppShare
-              title="Invia riepilogo conto su WhatsApp"
-              text={sessionSummary(session, court.name)}
-            />
+                      {!displayOnly && (
+              <WhatsAppShare
+                title="Invia riepilogo conto su WhatsApp"
+                text={sessionSummary(session, court.name)}
+              />
+            )}
 
             <div>
-              <div className="mb-2 flex items-center justify-between">
+
+              <div className="mb-2 flex items-center justify-between gap-2">
                 <span className="label-caps text-muted-foreground">
                   Ripartizione quota e extra
                 </span>
 
-                <button
-                  className="text-xs font-semibold text-primary"
-                  onClick={() => {
-                    setQuotaDraft(
-                      Object.fromEntries(
-                        session.players.map((p) => [
-                          p.id,
-                          String(p.quota),
-                        ]),
-                      ),
-                    );
-                    setEditQuotas((value) => !value);
-                  }}
-                >
-                  {editQuotas ? "Chiudi" : "Modifica quote"}
-                </button>
+                {canEditClosedDetails ? (
+                  <div className="flex gap-2">
+                    {editingClosedDetails && (
+                      <Btn
+                        size="sm"
+                        variant="subtle"
+                        onClick={() => {
+                          setClosedPlayers(
+                            session.players.map((item) => ({
+                              ...item,
+                              extras: [...(item.extras ?? [])],
+                            })),
+                          );
+                          setClosedTotal(String(session.total));
+                          setEditingClosedDetails(false);
+                        }}
+                      >
+                        Annulla
+                      </Btn>
+                    )}
+
+                    <Btn
+                      size="sm"
+                      variant={editingClosedDetails ? "primary" : "outline"}
+                      onClick={() => {
+                        if (editingClosedDetails) {
+                          saveClosedSession();
+                        } else {
+                          setClosedPlayers(
+                            session.players.map((item) => ({
+                              ...item,
+                              extras: [...(item.extras ?? [])],
+                            })),
+                          );
+                          setClosedTotal(String(session.total));
+                          setEditingClosedDetails(true);
+                        }
+                      }}
+                    >
+                      {editingClosedDetails
+                        ? "Salva modifiche"
+                        : "Modifica"}
+                    </Btn>
+                  </div>
+                ) : (
+                  !displayOnly && (
+                    <button
+                      className="text-xs font-semibold text-primary"
+                      onClick={() => {
+                        setQuotaDraft(
+                          Object.fromEntries(
+                            session.players.map((p) => [
+                              p.id,
+                              String(p.quota),
+                            ]),
+                          ),
+                        );
+                        setEditQuotas((value) => !value);
+                      }}
+                    >
+                      {editQuotas ? "Chiudi" : "Modifica quote"}
+                    </button>
+                  )
+                )}
               </div>
 
+
+
               <div className="space-y-2">
-                {session.players.map((p) => {
+
+              {editingClosedDetails && (
+                <div className="mb-4 space-y-3 rounded-xl border border-border bg-surface p-3">
+                  <Field label="Prezzo totale della partita (€)">
+                    <Input
+                      type="number"
+                      min="0"
+                      step="0.01"
+                      value={closedTotal}
+                      onChange={(event) =>
+                        setClosedTotal(event.target.value)
+                      }
+                    />
+                  </Field>
+
+                </div>
+              )}
+
+                {editingClosedDetails && (
+                  <div className="mb-2 flex items-center justify-between gap-2">
+                    <span className="text-xs text-muted-foreground">{closedPlayers.length} partecipanti</span>
+                    <Btn size="sm" variant="outline" onClick={addClosedPlayer} disabled={closedPlayers.length >= (court.type === "beach" ? 12 : 4)}>
+                      <Plus className="size-3" /> Aggiungi giocatore
+                    </Btn>
+                  </div>
+                )}
+                {(displayOnly || editingClosedDetails ? closedPlayers : session.players).map((p, index) => {
                   const active = player?.id === p.id;
+                  const closedItem =
+                    closedPlayers.find((item) => item.id === p.id) ?? p;
+                  const visiblePlayer = editingClosedDetails
+                    ? closedItem
+                    : p;
 
                   return (
                     <div
                       key={p.id}
-                      onClick={() => setSelPlayer(p.id)}
+                      onClick={
+                        displayOnly ? undefined : () => setSelPlayer(p.id)
+                      }
                       className={cn(
                         "cursor-pointer rounded-xl border p-3 transition-colors",
                         active
                           ? "border-primary/70 bg-primary/5"
                           : "border-border bg-surface-container hover:bg-surface-high",
-                        p.paid && "opacity-80",
+                        visiblePlayer.paid && "opacity-80",
                       )}
                     >
                       <div className="flex items-center gap-3">
@@ -993,124 +1068,234 @@ export function SessionDrawer({
                               : "bg-surface-highest text-muted-foreground",
                           )}
                         >
-                          {p.id.toUpperCase()}
+                          {`G${index + 1}`}
                         </span>
 
                         <div className="min-w-0 flex-1">
-                          <div className="truncate text-sm font-semibold">
-                            {p.name}
-                          </div>
-                          <div className="mono text-[11px] text-muted-foreground">
-                            Quota: {eur(p.quota)} · Extra:{" "}
-                            {eur(
-                              p.extras.reduce(
-                                (sum, e) => sum + e.price * e.qty,
-                                0,
-                              ),
-                            )}
-                          </div>
+                          {editingClosedDetails ? (
+                            <Input
+                              value={visiblePlayer.name}
+                              placeholder={`Giocatore ${index + 1}`}
+                              onChange={(event) =>
+                                updateClosedPlayer(p.id, {
+                                  name: event.target.value,
+                                })
+                              }
+                            />
+                          ) : (
+                            <div className="truncate text-sm font-semibold">
+                              {visiblePlayer.name}
+                            </div>
+                          )}
+
+                          {!editingClosedDetails && (
+                            <div className="mono text-[11px] text-muted-foreground">
+                              Quota: {eur(visiblePlayer.quota)} · Extra:{" "}
+                              {eur(
+                                visiblePlayer.extras.reduce(
+                                  (sum, extra) =>
+                                    sum + extra.price * extra.qty,
+                                  0,
+                                ),
+                              )}
+                            </div>
+                          )}
                         </div>
 
-                        {p.paid ? (
-                          <Badge tone="success">✓ PAGATO</Badge>
+                        {!editingClosedDetails ? (
+                          visiblePlayer.paid ? <Badge tone="success">✓ PAGATO</Badge> : <Badge tone="primary" dot>DA PAGARE</Badge>
                         ) : (
-                          <Badge tone="primary" dot>
-                            DA PAGARE
-                          </Badge>
+                          <button type="button" className="rounded p-1 text-danger" title="Rimuovi giocatore" onClick={() => removeClosedPlayer(p.id)}>
+                            <Trash2 className="size-4" />
+                          </button>
                         )}
                       </div>
 
-                      {editQuotas && !p.paid && (
-                        <div className="mt-3 flex items-center gap-2">
-                          <Input
-                            type="number"
-                            step="0.5"
-                            value={quotaDraft[p.id] ?? String(p.quota)}
-                            onChange={(e) =>
-                              setQuotaDraft((draft) => ({
-                                ...draft,
-                                [p.id]: e.target.value,
-                              }))
-                            }
-                            className="h-8 w-28"
-                          />
-                          <span className="text-xs text-muted-foreground">
-                            quota giocatore
-                          </span>
-                        </div>
-                      )}
+                      {editingClosedDetails ? (
+                        <div className="mt-3 space-y-3">
+                          <div className="grid grid-cols-2 gap-3">
+                            <Field label="Quota (€)">
+                              <Input
+                                type="number"
+                                min="0"
+                                step="0.01"
+                                value={String(visiblePlayer.quota)}
+                                onChange={(event) =>
+                                  updateClosedPlayer(p.id, {
+                                    quota: Number(event.target.value),
+                                  })
+                                }
+                              />
+                            </Field>
 
-                      {p.extras.length > 0 && (
-                        <div className="mt-3 space-y-1 rounded-lg border border-border bg-surface px-3 py-2">
-                          {p.extras.map((extra) => (
-                            <div
-                              key={extra.productId}
-                              className="mono flex items-center justify-between text-[11px]"
-                            >
-                              <span>
-                                {extra.qty}× {extra.name}
-                              </span>
-
-                              <span className="flex items-center gap-2">
-                                {eur(extra.price * extra.qty)}
-
-                                {!p.paid && (
-                                  <button
-                                    className="text-danger"
-                                    onClick={(event) => {
-                                      event.stopPropagation();
-                                      if (bookingOnly && booking) {
-                                        courtSessions.removeBookingExtra(
-                                          booking.id,
-                                          p.id,
-                                          extra.productId,
-                                        );
-                                      } else {
-                                        courtSessions.removeExtra(
-                                          session.id,
-                                          p.id,
-                                          extra.productId,
-                                        );
-                                      }
-                                    }}
-                                  >
-                                    <Minus className="size-3" />
-                                  </button>
-                                )}
-                              </span>
+                            <div className="flex items-end">
+                              <Toggle
+                                checked={visiblePlayer.paid}
+                                onChange={(checked) =>
+                                  updateClosedPlayer(p.id, {
+                                    paid: checked,
+                                  })
+                                }
+                                label="Pagato"
+                                hint="Stato del pagamento"
+                              />
                             </div>
-                          ))}
+                          </div>
 
-                          <div className="mono flex justify-between border-t border-border pt-1 text-[11px] font-bold">
-                            <span>Totale giocatore</span>
-                            <span>{eur(playerTotal(p.id))}</span>
+                          <div className="space-y-2">
+                            <div className="label-caps text-muted-foreground">
+                              Extra del giocatore
+                            </div>
+
+                            {visiblePlayer.extras.length === 0 && (
+                              <div className="text-xs text-muted-foreground">
+                                Nessun extra registrato.
+                              </div>
+                            )}
+                                                        {visiblePlayer.extras.map((extra) => (
+                              <div
+                                key={extra.productId}
+                                className="rounded-lg border border-border bg-surface p-2"
+                              >
+                                <div className="mb-2 flex items-center justify-between gap-2">
+                                  <span className="text-xs font-semibold">
+                                    {extra.name}
+                                  </span>
+                                  <button
+                                    type="button"
+                                    className="text-danger"
+                                    onClick={() =>
+                                      removeClosedExtra(
+                                        p.id,
+                                        extra.productId,
+                                      )
+                                    }
+                                  >
+                                    <Trash2 className="size-3.5" />
+                                  </button>
+                                </div>
+
+                                <div className="grid grid-cols-2 gap-2">
+                                  <Field label="Quantità">
+                                    <Input
+                                      type="number"
+                                      min="0.01"
+                                      step="0.01"
+                                      value={String(extra.qty)}
+                                      onChange={(event) =>
+                                        updateClosedExtra(
+                                          p.id,
+                                          extra.productId,
+                                          {
+                                            qty: Number(event.target.value),
+                                          },
+                                        )
+                                      }
+                                    />
+                                  </Field>
+
+                                  <Field label="Prezzo unitario (€)">
+                                    <Input
+                                      type="number"
+                                      min="0"
+                                      step="0.01"
+                                      value={String(extra.price)}
+                                      onChange={(event) =>
+                                        updateClosedExtra(
+                                          p.id,
+                                          extra.productId,
+                                          {
+                                            price: Number(event.target.value),
+                                          },
+                                        )
+                                      }
+                                    />
+                                  </Field>
+                                </div>
+                              </div>
+                            ))}
+                            {quickExtras.length > 0 && (
+                              <div className="flex flex-wrap gap-2 pt-2">
+                                {quickExtras.map((product) => (
+                                  <Btn key={product.id} size="sm" variant="outline" onClick={() => addClosedExtra(p.id, product)}>
+                                    <Plus className="size-3" /> {product.name}
+                                  </Btn>
+                                ))}
+                              </div>
+                            )}
                           </div>
                         </div>
-                      )}
+                      ) : (
+                        <>
+                          {!displayOnly && editQuotas && !p.paid && (
+                            <div className="mt-3 flex items-center gap-2">
+                              <Input
+                                type="number"
+                                step="0.5"
+                                value={quotaDraft[p.id] ?? String(p.quota)}
+                                onChange={(event) =>
+                                  setQuotaDraft((draft) => ({
+                                    ...draft,
+                                    [p.id]: event.target.value,
+                                  }))
+                                }
+                                className="h-8 w-28"
+                              />
+                              <span className="text-xs text-muted-foreground">
+                                quota giocatore
+                              </span>
+                            </div>
+                          )}
 
-                      {!p.paid && (
-                        <div className="mt-3 flex justify-end">
-                          <Btn
-                            size="sm"
-                            variant="outline"
-                            onClick={(event) => {
-                              event.stopPropagation();
-                              setPayIds([p.id]);
-                              setPayQuotaAmount(String(p.quota));
-                              setMethod("carta");
-                              setCash("0");
-                              setPayOpen(true);
-                            }}
-                          >
-                            Salda {eur(playerTotal(p.id))}
-                          </Btn>
-                        </div>
+                          {visiblePlayer.extras.length > 0 && (
+                            <div className="mt-3 space-y-1 rounded-lg border border-border bg-surface px-3 py-2">
+                              {visiblePlayer.extras.map((extra) => (
+                                <div
+                                  key={extra.productId}
+                                  className="mono flex items-center justify-between text-[11px]"
+                                >
+                                  <span>
+                                    {extra.qty}× {extra.name}
+                                  </span>
+                                  <span>
+                                    {eur(extra.price * extra.qty)}
+                                  </span>
+                                </div>
+                              ))}
+
+                              <div className="mono flex justify-between border-t border-border pt-1 text-[11px] font-bold">
+                                <span>Totale giocatore</span>
+                                <span>{eur(playerTotal(p.id))}</span>
+                              </div>
+                            </div>
+                          )}
+
+                          {!displayOnly && !p.paid && (
+                            <div className="mt-3 flex justify-end">
+                              <Btn
+                                size="sm"
+                                variant="outline"
+                                onClick={(event) => {
+                                  event.stopPropagation();
+                                  setPayIds([p.id]);
+                                  setPayQuotaAmount(String(p.quota));
+                                  setMethod("carta");
+                                  setCash("0");
+                                  setPayOpen(true);
+                                }}
+                              >
+                                Salda {eur(playerTotal(p.id))}
+                              </Btn>
+                            </div>
+                          )}
+                        </>
                       )}
                     </div>
                   );
                 })}
               </div>
-                            {editQuotas && (
+
+               {!displayOnly && editQuotas && (
                 <Btn
                   variant="primary"
                   size="sm"
@@ -1137,7 +1322,7 @@ export function SessionDrawer({
               )}
             </div>
 
-            {player && !player.paid && (
+           {!displayOnly && player && !player.paid && (
               <div>
                 <div className="mb-2 flex items-center justify-between">
                   <span className="label-caps text-muted-foreground">
@@ -1153,8 +1338,22 @@ export function SessionDrawer({
                     <button
                       key={p.id}
                       disabled={p.stock <= 0}
-                      onClick={() => {
-                        courtSessions.addExtra(session.id, player.id, p.id);
+                                           onClick={() => {
+                        if (bookingOnly && booking) {
+                          const result = courtSessions.addBookingExtra(
+                            booking.id,
+                            player.id,
+                            p.id,
+                          );
+
+                          if (!result.ok) {
+                            toast.error(result.error ?? "Impossibile aggiungere l'extra.");
+                            return;
+                          }
+                        } else {
+                          courtSessions.addExtra(session.id, player.id, p.id);
+                        }
+
                         toast.success(
                           `${p.name} addebitato a ${player.name}`,
                         );
@@ -1183,7 +1382,7 @@ export function SessionDrawer({
       </Drawer>
 
       <Modal
-        open={payOpen && !!session && !session.closed}
+        open={!displayOnly && payOpen && !!session && !session.closed}
         onClose={() => setPayOpen(false)}
         title="Incasso quota campo"
         footer={
@@ -1200,14 +1399,30 @@ export function SessionDrawer({
                 const cashAmount =
                   method === "misto" ? Number(cash) || 0 : 0;
 
-                courtSessions.payPlayers(
-                  session.id,
-                  payIds,
-                  method,
-                  cashAmount,
-                  Math.max(0, payTotal - cashAmount),
-                  payQuotaTotal,
-                );
+                                if (bookingOnly && booking) {
+                  const result = courtSessions.payBookingPlayers(
+                    booking.id,
+                    payIds,
+                    method,
+                    cashAmount,
+                    Math.max(0, payTotal - cashAmount),
+                    payQuotaTotal,
+                  );
+
+                  if (!result.ok) {
+                    toast.error(result.error ?? "Errore durante l'incasso.");
+                    return;
+                  }
+                } else {
+                  courtSessions.payPlayers(
+                    session.id,
+                    payIds,
+                    method,
+                    cashAmount,
+                    Math.max(0, payTotal - cashAmount),
+                    payQuotaTotal,
+                  );
+                }
 
                 setPayOpen(false);
                 toast.success(`Incassati ${eur(payTotal)}`);

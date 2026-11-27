@@ -142,6 +142,69 @@ const nid = (p: string) =>
 
 const round = (n: number) => Math.round(n * 100) / 100;
 
+const roundUpHalf = (value: number) =>
+  Math.ceil((Math.max(0, value) - 0.000001) * 2) / 2;
+
+function distributeHalfEuroTotal(
+  players: Player[],
+  targetTotal: number,
+  excludedIds: Set<string> = new Set(),
+): Player[] {
+  const eligible = players.filter((player) => !player.paid && !excludedIds.has(player.id));
+  if (!eligible.length) return players;
+  const halfUnits = Math.max(0, Math.round(roundUpHalf(targetTotal) * 2));
+  const baseUnits = Math.floor(halfUnits / eligible.length);
+  const remainder = halfUnits % eligible.length;
+  const quotas = new Map(eligible.map((player, index) => [
+    player.id,
+    (baseUnits + (index < remainder ? 1 : 0)) / 2,
+  ]));
+  return players.map((player) =>
+    quotas.has(player.id) ? { ...player, quota: quotas.get(player.id)! } : player,
+  );
+}
+
+function addHalfEuroDifference(
+  players: Player[],
+  excludedIds: Set<string>,
+  difference: number,
+): Player[] {
+  const eligible = players.filter((player) => !player.paid && !excludedIds.has(player.id));
+  if (!eligible.length || difference <= 0) return players;
+  const halfUnits = Math.max(0, Math.round(roundUpHalf(difference) * 2));
+  const baseUnits = Math.floor(halfUnits / eligible.length);
+  const remainder = halfUnits % eligible.length;
+  const increments = new Map(eligible.map((player, index) => [
+    player.id,
+    (baseUnits + (index < remainder ? 1 : 0)) / 2,
+  ]));
+  return players.map((player) =>
+    increments.has(player.id)
+      ? { ...player, quota: roundUpHalf(player.quota + increments.get(player.id)!) }
+      : player,
+  );
+}
+
+function redistributeOneQuota(
+  players: Player[],
+  requested: Record<string, number>,
+): Player[] {
+  const selected = players.find(
+    (player) =>
+      !player.paid &&
+      Object.prototype.hasOwnProperty.call(requested, player.id) &&
+      Math.abs((Number(requested[player.id]) || 0) - player.quota) > 0.001,
+  );
+  if (!selected) return players;
+  const selectedQuota = roundUpHalf(Number(requested[selected.id]) || 0);
+  const paidTotal = players.filter((player) => player.paid).reduce((sum, player) => sum + player.quota, 0);
+  const totalBefore = players.reduce((sum, player) => sum + player.quota, 0);
+  const remaining = Math.max(0, totalBefore - paidTotal - selectedQuota);
+  const withSelected = players.map((player) =>
+    player.id === selected.id ? { ...player, quota: selectedQuota } : player,
+  );
+  return distributeHalfEuroTotal(withSelected, remaining, new Set([selected.id]));
+}
 function currentOperator(db: DB): { id: string; name: string } {
   const u = db.users.find((x) => x.id === db.currentUserId);
   return { id: u?.id ?? "system", name: u?.name ?? "Sistema" };
@@ -160,39 +223,45 @@ function nextTxId(db: DB, kind: "bar" | "campo") {
  * Crea i dati iniziali dei partecipanti quando una prenotazione
  * non ha ancora una lista operativa salvata.
  */
+
+/**
+ * Crea i dati iniziali dei partecipanti in base allo sport.
+ * Padel: 4 partecipanti obbligatori.
+ * Tennis: da 2 a 4 partecipanti.
+ * Beach: da 2 a 12 partecipanti.
+ */
 function createBookingParticipants(booking: Booking, total: number): Player[] {
   const court = load().courts.find((c) => c.id === booking.courtId);
 
-  const defaultCount =
-    court?.type === "padel"
-      ? 4
-      : 2;
+  const minCount = court?.type === "padel" ? 4 : 2;
+  const maxCount =
+    court?.type === "beach"
+      ? 12
+      : court?.type === "tennis"
+        ? 4
+        : 4;
 
-  const names = booking.players.length
-    ? booking.players.slice(0, 4)
-    : Array.from({ length: defaultCount }, () => "");
+  const names = (booking.players ?? [])
+    .map((name) => name.trim())
+    .filter(Boolean)
+    .slice(0, maxCount);
 
-  const count = Math.max(defaultCount, names.length);
-  const baseQuota = round(total / count);
-  let assigned = 0;
+  const count = Math.min(
+    maxCount,
+    Math.max(minCount, names.length),
+  );
 
-  return Array.from({ length: count }, (_, index) => {
-    const quota =
-      index === count - 1
-        ? round(total - assigned)
-        : baseQuota;
+  const baseQuota = roundUpHalf(total / count);
 
-    assigned = round(assigned + quota);
-
-    return {
-      id: `g${index + 1}`,
-      name: names[index]?.trim() || `Giocatore ${index + 1}`,
-      quota,
-      paid: false,
-      extras: [],
-    };
-  });
+  return Array.from({ length: count }, (_, index) => ({
+    id: `g${index + 1}`,
+    name: names[index] || `Giocatore ${index + 1}`,
+    quota: baseQuota,
+    paid: false,
+    extras: [],
+  }));
 }
+
 
 /* ---------------------------------- auth --------------------------------- */
 
@@ -352,7 +421,7 @@ export const sales = {
       const isGift = input.method === "omaggio";
 
       const subtotal = round(
-        input.items.reduce((s, i) => s + i.price * i.qty, 0),
+                input.items.reduce((s, i) => s + i.price * i.qty, 0),
       );
 
       const discount = isGift ? subtotal : input.discount;
@@ -379,7 +448,7 @@ export const sales = {
         sessionId: input.sessionId,
         bookingId: input.bookingId,
         playerName: input.playerName,
-        note: isGift
+                note: isGift
           ? [input.note, "Operazione omaggio: nessun incasso registrato."]
               .filter(Boolean)
               .join(" ")
@@ -489,7 +558,7 @@ export const courtSessions = {
      startedAt: new Date(`${booking.date}T${booking.start}:00`).toISOString(),
       durationMin: minutes,
       pricingMode: "giocatore",
-      total,
+      total: round(participants.reduce((sum, player) => sum + player.quota, 0)),
       players: participants,
       closed: false,
       bookingId: booking.id,
@@ -520,6 +589,7 @@ export const courtSessions = {
               ...b,
               participants,
               players: participants.map((p) => p.name),
+              price: round(participants.reduce((sum, player) => sum + player.quota, 0)),
             }
           : b,
       );
@@ -557,7 +627,7 @@ export const courtSessions = {
           : input.playerNames.map((n, i) => ({
               id: `g${i + 1}`,
               name: n.trim() || `Giocatore ${i + 1}`,
-              quota: round(input.total / Math.max(1, input.playerNames.length)),
+              quota: roundUpHalf(input.total / Math.max(1, input.playerNames.length)),
               paid: false,
               extras: [],
             }));
@@ -568,7 +638,7 @@ export const courtSessions = {
         startedAt: new Date().toISOString(),
         durationMin: input.durationMin,
         pricingMode: input.pricingMode,
-        total: input.total,
+        total: round(players.reduce((sum, player) => sum + player.quota, 0)),
         players,
         closed: false,
         ...(input.bookingId ? { bookingId: input.bookingId } : {}),
@@ -583,17 +653,15 @@ export const courtSessions = {
 
   updateQuotas(sessionId: string, quotas: Record<string, number>) {
     set((d) => {
-      d.sessions = d.sessions.map((s) =>
-        s.id === sessionId
-          ? {
-              ...s,
-              players: s.players.map((p) => ({ ...p, quota: quotas[p.id] ?? p.quota })),
-              total: round(
-                s.players.reduce((sum, p) => sum + (quotas[p.id] ?? p.quota), 0),
-              ),
-            }
-          : s,
-      );
+      d.sessions = d.sessions.map((session) => {
+        if (session.id !== sessionId) return session;
+        const players = redistributeOneQuota(session.players, quotas);
+        return {
+          ...session,
+          players,
+          total: round(players.reduce((sum, player) => sum + player.quota, 0)),
+        };
+      });
     });
   },
     addExtra(sessionId: string, playerId: string, productId: string) {
@@ -684,6 +752,7 @@ export const courtSessions = {
               ...item,
               participants,
               players: participants.map((player) => player.name),
+              price: round(participants.reduce((sum, player) => sum + player.quota, 0)),
             }
           : item,
       );
@@ -698,24 +767,34 @@ export const courtSessions = {
    * Gestione operativa anticipata direttamente sulla prenotazione.
    * Non crea sessioni e non occupa il campo.
    */
-  updateBookingQuotas(bookingId: string, quotas: Record<string, number>) {
+
+  updateBookingQuotas(
+    bookingId: string,
+    quotasOrPlayerId: Record<string, number> | string,
+    newQuota?: number,
+  ) {
     set((d) => {
       d.bookings = d.bookings.map((booking) => {
         if (booking.id !== bookingId) return booking;
-
-        const participants = (booking.participants ?? []).map((player) => ({
-          ...player,
-          quota: player.paid ? player.quota : Math.max(0, quotas[player.id] ?? player.quota),
-        }));
-
+        const participants = booking.participants ?? [];
+        const requested =
+          typeof quotasOrPlayerId === "string"
+            ? {
+                ...Object.fromEntries(participants.map((player) => [player.id, player.quota])),
+                [quotasOrPlayerId]: newQuota ?? 0,
+              }
+            : quotasOrPlayerId;
+        const updatedParticipants = redistributeOneQuota(participants, requested);
         return {
           ...booking,
-          participants,
-          price: round(participants.reduce((sum, player) => sum + player.quota, 0)),
+          participants: updatedParticipants,
+          players: updatedParticipants.map((player) => player.name),
+          price: round(updatedParticipants.reduce((sum, player) => sum + player.quota, 0)),
         };
       });
     });
   },
+
 
   addBookingExtra(bookingId: string, playerId: string, productId: string) {
     const db = getDB();
@@ -784,7 +863,7 @@ export const courtSessions = {
         currentProduct,
         "prodotto_campo",
         -1,
-        "Prenotazione · Extra giocatore",
+                "Prenotazione · Extra giocatore",
         bookingId,
         "Extra assegnato prima dell'inizio della partita.",
       );
@@ -793,27 +872,53 @@ export const courtSessions = {
     return { ok: true };
   },
 
+
   removeBookingExtra(bookingId: string, playerId: string, productId: string) {
     set((d) => {
-      d.bookings = d.bookings.map((booking) =>
-        booking.id !== bookingId
-          ? booking
+      const booking = d.bookings.find((item) => item.id === bookingId);
+      const player = booking?.participants?.find(
+        (item) => item.id === playerId,
+      );
+      const extra = player?.extras.find(
+        (item) => item.productId === productId,
+      );
+
+      if (!booking || !player || !extra) return;
+
+      const product = d.products.find((item) => item.id === productId);
+
+      d.bookings = d.bookings.map((item) =>
+        item.id !== bookingId
+          ? item
           : {
-              ...booking,
-              participants: (booking.participants ?? []).map((player) =>
-                player.id !== playerId
-                  ? player
+              ...item,
+              participants: (item.participants ?? []).map((participant) =>
+                participant.id !== playerId
+                  ? participant
                   : {
-                      ...player,
-                      extras: player.extras.filter(
-                        (extra) => extra.productId !== productId,
+                      ...participant,
+                      extras: participant.extras.filter(
+                        (item) => item.productId !== productId,
                       ),
                     },
               ),
             },
       );
+
+      if (product) {
+        pushMovement(
+          d,
+          product,
+          "storno",
+          extra.qty,
+          "Prenotazione · Rimozione extra",
+          bookingId,
+          `Ripristino di ${extra.qty} unità rimosse dalla prenotazione.`,
+        );
+      }
     });
   },
+
 
   /**
    * Registra un pagamento anticipato direttamente sulla prenotazione.
@@ -851,7 +956,7 @@ export const courtSessions = {
 
     const requestedQuota =
       targets.length === 1 && Number.isFinite(quotaAmount)
-        ? Math.max(0, Math.min(quotaTotal, round(quotaAmount!)))
+        ? Math.min(quotaTotal, roundUpHalf(Math.min(quotaTotal, quotaAmount!)))
         : quotaTotal;
 
     const unpaidOthers = participants.filter(
@@ -927,7 +1032,7 @@ export const courtSessions = {
       );
       const currentRequestedQuota =
         currentTargets.length === 1 && Number.isFinite(quotaAmount)
-          ? Math.max(0, Math.min(currentQuota, round(quotaAmount!)))
+          ? Math.min(currentQuota, roundUpHalf(Math.min(currentQuota, quotaAmount!)))
           : currentQuota;
       const currentAmount = round(currentRequestedQuota + currentExtras);
 
@@ -960,62 +1065,71 @@ export const courtSessions = {
         courtId: currentBooking.courtId,
         bookingId,
         playerName: currentTargets.map((player) => player.name).join(", "),
+                playerIds: currentTargets.map((player) => player.id),
+                playerPayments: currentTargets.map((player) => {
+          const extras = player.extras.map((extra) => ({
+            productId: extra.productId,
+            name: extra.name,
+            qty: extra.qty,
+            price: extra.price,
+            cost: extra.cost,
+          }));
+          const quota =
+            currentTargets.length === 1
+              ? currentRequestedQuota
+              : player.quota;
+
+          return {
+            playerId: player.id,
+            playerName: player.name,
+            quota,
+            extras,
+            amount: round(
+              quota +
+                extras.reduce(
+                  (sum, extra) => sum + extra.price * extra.qty,
+                  0,
+                ),
+            ),
+          };
+        }),
         note: "Pagamento anticipato quota campo ed extra.",
+        
         cancelled: false,
       };
 
       d.transactions = [tx, ...d.transactions];
 
-      const totalCents = Math.round(currentDifference * 100);
-      const shareCents = currentUnpaidOthers.length
-        ? Math.floor(totalCents / currentUnpaidOthers.length)
-        : 0;
-      let extraCents = currentUnpaidOthers.length
-        ? totalCents % currentUnpaidOthers.length
-        : 0;
-
-      d.bookings = d.bookings.map((item) =>
-        item.id !== bookingId
-          ? item
-          : {
-              ...item,
-              participants: currentParticipants.map((player) => {
-                if (playerIds.includes(player.id) && !player.paid) {
-                  return {
-                    ...player,
-                    quota:
-                      currentTargets.length === 1
-                        ? currentRequestedQuota
-                        : player.quota,
-                    paid: true,
-                  };
-                }
-
-                if (
-                  currentDifference > 0 &&
-                  currentUnpaidOthers.some((other) => other.id === player.id)
-                ) {
-                  const additionCents =
-                    shareCents + (extraCents > 0 ? 1 : 0);
-
-                  if (extraCents > 0) extraCents -= 1;
-
-                  return {
-                    ...player,
-                    quota: round(player.quota + additionCents / 100),
-                  };
-                }
-
-                return player;
-              }),
-            },
-      );
+      d.bookings = d.bookings.map((item) => {
+        if (item.id !== bookingId) return item;
+        const paidIds = new Set(currentTargets.map((player) => player.id));
+        const paidParticipants = currentParticipants.map((player) =>
+          paidIds.has(player.id) && !player.paid
+            ? {
+                ...player,
+                quota: currentTargets.length === 1 ? currentRequestedQuota : player.quota,
+                paid: true,
+              }
+            : player,
+        );
+        const updatedParticipants = addHalfEuroDifference(
+          paidParticipants,
+          paidIds,
+          currentDifference,
+        );
+        return {
+          ...item,
+          participants: updatedParticipants,
+          players: updatedParticipants.map((player) => player.name),
+          price: round(updatedParticipants.reduce((sum, player) => sum + player.quota, 0)),
+        };
+      });
     });
 
     return { ok: true };
   },
 
-   
+
   payPlayers(
     sessionId: string,
     playerIds: string[],
@@ -1042,7 +1156,7 @@ export const courtSessions = {
       // Gli incassi cumulativi mantengono le quote complete selezionate.
       const requestedQuota =
         targets.length === 1 && Number.isFinite(quotaAmount)
-          ? Math.max(0, Math.min(currentQuotaTotal, round(quotaAmount!)))
+          ? Math.min(currentQuotaTotal, roundUpHalf(Math.min(currentQuotaTotal, quotaAmount!)))
           : currentQuotaTotal;
 
       const unpaidOthers = session.players.filter(
@@ -1090,7 +1204,34 @@ export const courtSessions = {
           courtId: session.courtId,
           sessionId: session.id,
           bookingId: session.bookingId,
-          playerName: targets.map((target) => target.name).join(", "),
+                    playerName: targets.map((target) => target.name).join(", "),
+          playerIds: targets.map((target) => target.id),
+          playerPayments: targets.map((target) => {
+            const extras = target.extras.map((extra) => ({
+              productId: extra.productId,
+              name: extra.name,
+              qty: extra.qty,
+              price: extra.price,
+              cost: extra.cost,
+            }));
+
+            const quota =
+              targets.length === 1 ? requestedQuota : target.quota;
+
+            return {
+              playerId: target.id,
+              playerName: target.name,
+              quota,
+              extras,
+              amount: round(
+                quota +
+                  extras.reduce(
+                    (sum, extra) => sum + extra.price * extra.qty,
+                    0,
+                  ),
+              ),
+            };
+          }),
           note: "Saldo quota campo ed extra. La quota campo può essere redistribuita tra i giocatori non ancora saldati.",
           cancelled: false,
         },
@@ -1099,46 +1240,25 @@ export const courtSessions = {
 
       d.sessions = d.sessions.map((item) => {
         if (item.id !== sessionId) return item;
-
-        const totalCents = Math.round(difference * 100);
-        const shareCents =
-          unpaidOthers.length > 0
-            ? Math.floor(totalCents / unpaidOthers.length)
-            : 0;
-        let extraCents =
-          unpaidOthers.length > 0
-            ? totalCents % unpaidOthers.length
-            : 0;
-
-        return {
-          ...item,
-          players: item.players.map((player) => {
-            if (playerIds.includes(player.id) && !player.paid) {
-              return {
+        const paidIds = new Set(targets.map((player) => player.id));
+        const paidPlayers = item.players.map((player) =>
+          paidIds.has(player.id) && !player.paid
+            ? {
                 ...player,
                 quota: targets.length === 1 ? requestedQuota : player.quota,
                 paid: true,
-              };
-            }
-
-            if (
-              difference > 0 &&
-              !player.paid &&
-              unpaidOthers.some((other) => other.id === player.id)
-            ) {
-              const additionCents =
-                shareCents + (extraCents > 0 ? 1 : 0);
-
-              if (extraCents > 0) extraCents -= 1;
-
-              return {
-                ...player,
-                quota: round(player.quota + additionCents / 100),
-              };
-            }
-
-            return player;
-          }),
+              }
+            : player,
+        );
+        const updatedPlayers = addHalfEuroDifference(
+          paidPlayers,
+          paidIds,
+          difference,
+        );
+        return {
+          ...item,
+          players: updatedPlayers,
+          total: round(updatedPlayers.reduce((sum, player) => sum + player.quota, 0)),
         };
       });
     });
@@ -1199,25 +1319,28 @@ export const courtSessions = {
       );
 
       d.sessions = d.sessions.filter(
-        (item) => item.id !== currentSession.id,
+                (item) => item.id !== currentSession.id,
       );
     });
 
     return { ok: true };
-  },
-  /**
-   * Modifica esclusivamente i dettagli di una sessione conclusa.
-   * Le quote e i nomi dei giocatori pagati restano invariati.
-   * Le transazioni e i movimenti contabili non vengono toccati.
+      },
+    /**
+   * Aggiorna una partita conclusa e registra le relative rettifiche.
+   * Le transazioni originali non vengono mai modificate.
    */
-  updateClosedDetails(
+    updateClosedDetails(
     sessionId: string,
     input: {
       total: number;
+      paymentMethod: "contanti" | "carta" | "misto";
+      paymentCash: number;
       players: Array<{
         id: string;
         name: string;
         quota: number;
+        paid: boolean;
+        extras: Player["extras"];
       }>;
     },
   ): { ok: boolean; error?: string } {
@@ -1231,7 +1354,7 @@ export const courtSessions = {
     if (!session.closed) {
       return {
         ok: false,
-        error: "Puoi modificare da qui soltanto una partita conclusa.",
+        error: "Puoi modificare soltanto una partita conclusa.",
       };
     }
 
@@ -1251,62 +1374,432 @@ export const courtSessions = {
       }
 
       if (submittedIds.has(item.id)) {
-        return { ok: false, error: "Un giocatore è presente più di una volta." };
+        return {
+          ok: false,
+          error: "Un giocatore è presente più di una volta.",
+        };
       }
 
       submittedIds.add(item.id);
 
-      const existingPlayer = session.players.find(
-        (player) => player.id === item.id,
-      );
-
-      if (!existingPlayer) {
-        return { ok: false, error: "Uno dei giocatori non appartiene a questa partita." };
+      if (!session.players.some((player) => player.id === item.id)) {
+        return {
+          ok: false,
+          error: "Uno dei giocatori non appartiene a questa partita.",
+        };
       }
 
-      if (existingPlayer.paid) {
+      if (
+        typeof item.name !== "string" ||
+        !item.name.trim() ||
+        !Number.isFinite(item.quota) ||
+        item.quota < 0 ||
+        typeof item.paid !== "boolean" ||
+        !Array.isArray(item.extras)
+      ) {
+        return {
+          ok: false,
+          error: "Controlla i dati di uno dei giocatori.",
+        };
+      }
+
+      for (const extra of item.extras) {
+        if (
+          !extra ||
+          typeof extra.productId !== "string" ||
+          typeof extra.name !== "string" ||
+          !Number.isFinite(extra.qty) ||
+          extra.qty <= 0 ||
+          !Number.isFinite(extra.price) ||
+          extra.price < 0 ||
+          !Number.isFinite(extra.cost) ||
+          extra.cost < 0
+        ) {
+          return {
+            ok: false,
+            error: "Uno degli extra non è valido.",
+          };
+        }
+      }
+    }
+
+    const updatedPlayers = session.players.map((player) => {
+      const updated = input.players.find((item) => item.id === player.id);
+
+      if (!updated) {
+        return {
+          ...player,
+          extras: player.extras.map((extra) => ({ ...extra })),
+        };
+      }
+
+      return {
+        ...player,
+        name: updated.name.trim(),
+        quota: round(updated.quota),
+        paid: updated.paid,
+        extras: updated.extras.map((extra) => ({ ...extra })),
+      };
+    });
+
+    const affectsPaidLedger = session.players.some((oldPlayer) => {
+      const updated = updatedPlayers.find(
+        (player) => player.id === oldPlayer.id,
+      );
+
+      if (!updated) return false;
+
+      if (oldPlayer.paid !== updated.paid) return true;
+      if (!oldPlayer.paid) return false;
+
+      return (
+        round(oldPlayer.quota) !== round(updated.quota) ||
+        JSON.stringify(oldPlayer.extras) !==
+          JSON.stringify(updated.extras)
+      );
+    });
+
+    const linkedTransactions = db.transactions.filter(
+      (tx) =>
+        !tx.cancelled &&
+        tx.kind === "campo" &&
+        (tx.sessionId === sessionId ||
+          (!!session.bookingId && tx.bookingId === session.bookingId)),
+    );
+
+    const legacyTransactions = linkedTransactions.filter(
+      (tx) => !tx.adjustmentOf && !Array.isArray(tx.playerPayments),
+    );
+
+    if (affectsPaidLedger && legacyTransactions.length > 0) {
+      return {
+        ok: false,
+        error:
+          "Questa partita contiene vecchi incassi senza dettaglio contabile per giocatore. Per sicurezza non posso rettificarli automaticamente.",
+      };
+    }
+
+    const adjustments: Transaction[] = [];
+const operator = currentOperator(db);
+let remainingCashForNewPayments = round(input.paymentCash);
+
+for (const player of updatedPlayers) {
+      const entries = linkedTransactions.flatMap(
+        (tx) =>
+          (tx.playerPayments ?? []).filter(
+            (payment) => payment.playerId === player.id,
+          ),
+      );
+
+      const ledgerQuota = round(
+        entries.reduce((sum, payment) => sum + payment.quota, 0),
+      );
+
+      const targetQuota = player.paid ? round(player.quota) : 0;
+      const deltaQuota = round(targetQuota - ledgerQuota);
+
+      const itemDeltas = new Map<string, TxItem>();
+
+      const addItemDelta = (item: TxItem, direction: number) => {
+        const key = JSON.stringify([
+          item.productId,
+          item.name,
+          item.price,
+          item.cost,
+        ]);
+
+        const current = itemDeltas.get(key);
+
+        itemDeltas.set(key, {
+          ...item,
+          qty: round((current?.qty ?? 0) + item.qty * direction),
+        });
+      };
+
+      for (const payment of entries) {
+        for (const extra of payment.extras) {
+          addItemDelta(extra, -1);
+        }
+      }
+
+      if (player.paid) {
+        for (const extra of player.extras) {
+          addItemDelta(
+            {
+              productId: extra.productId,
+              name: extra.name,
+              qty: extra.qty,
+              price: extra.price,
+              cost: extra.cost,
+            },
+            1,
+          );
+        }
+      }
+
+      const deltaItems = [...itemDeltas.values()].filter(
+        (item) => Math.abs(item.qty) > 0.0001,
+      );
+
+      const deltaAmount = round(
+        deltaQuota +
+          deltaItems.reduce(
+            (sum, item) => sum + item.price * item.qty,
+            0,
+          ),
+      );
+
+      if (
+        Math.abs(deltaQuota) < 0.005 &&
+        deltaItems.length === 0
+      ) {
         continue;
       }
 
-      if (typeof item.name !== "string") {
-        return { ok: false, error: "Il nome di un giocatore non è valido." };
+      const sourceTransactions = linkedTransactions.filter(
+        (tx) =>
+          !tx.adjustmentOf &&
+          tx.playerPayments?.some(
+            (payment) => payment.playerId === player.id,
+          ),
+      );
+
+           const hasOriginalPayment = sourceTransactions.length > 0;
+
+      if (!hasOriginalPayment && deltaAmount < -0.005) {
+        return {
+          ok: false,
+          error:
+            `Non trovo un incasso originale collegato a ${player.name}. ` +
+            "Non posso registrare uno storno senza una transazione di origine.",
+        };
       }
 
-      if (!Number.isFinite(item.quota) || item.quota < 0) {
-        return { ok: false, error: "Una delle quote non è valida." };
+      let originalCash = 0;
+      let originalCard = 0;
+
+      for (const tx of sourceTransactions) {
+        const playerAmount = round(
+          (tx.playerPayments ?? [])
+            .filter((payment) => payment.playerId === player.id)
+            .reduce((sum, payment) => sum + payment.amount, 0),
+        );
+
+        if (tx.amount > 0) {
+          originalCash += tx.cash * (playerAmount / tx.amount);
+          originalCard += tx.card * (playerAmount / tx.amount);
+        }
+      }
+
+     
+      const originalSplit = originalCash + originalCard;
+
+      let cashDelta = 0;
+      let cardDelta = 0;
+
+      if (hasOriginalPayment && originalSplit > 0) {
+        cashDelta = round(deltaAmount * (originalCash / originalSplit));
+        cardDelta = round(deltaAmount - cashDelta);
+      } else {
+        if (
+          !["contanti", "carta", "misto"].includes(input.paymentMethod)
+        ) {
+          return {
+            ok: false,
+            error: "Seleziona un metodo di pagamento valido.",
+          };
+        }
+
+        let requestedCash = 0;
+
+        if (input.paymentMethod === "contanti") {
+          requestedCash = deltaAmount;
+        } else if (input.paymentMethod === "misto") {
+          requestedCash = Math.min(
+            remainingCashForNewPayments,
+            deltaAmount,
+          );
+          remainingCashForNewPayments = round(
+            remainingCashForNewPayments - requestedCash,
+          );
+        }
+
+        if (
+          !Number.isFinite(requestedCash) ||
+          requestedCash < 0 ||
+          requestedCash > deltaAmount
+        ) {
+          return {
+            ok: false,
+            error: "La ripartizione tra contanti e carta non è valida.",
+          };
+        }
+
+        cashDelta = round(requestedCash);
+        cardDelta = round(deltaAmount - cashDelta);
+      }
+
+
+      const method: PaymentMethod =
+        Math.abs(cashDelta) > 0.005 &&
+        Math.abs(cardDelta) > 0.005
+          ? "misto"
+          : Math.abs(cashDelta) > 0.005
+            ? "contanti"
+            : Math.abs(cardDelta) > 0.005
+              ? "carta"
+              : hasOriginalPayment
+                ? sourceTransactions[0].method
+                : input.paymentMethod;
+
+      const originalIds = sourceTransactions.map((tx) => tx.id);
+
+      adjustments.push({
+        id: nid("rett"),
+        ts: new Date().toISOString(),
+        kind: "campo",
+        label: `Rettifica partita · ${player.name}`,
+        items: deltaItems,
+        subtotal: deltaAmount,
+        discount: 0,
+        amount: deltaAmount,
+        method,
+        cash: cashDelta,
+        card: cardDelta,
+        operatorId: operator.id,
+        operatorName: operator.name,
+        courtId: session.courtId,
+        sessionId: session.id,
+        bookingId: session.bookingId,
+        playerName: player.name,
+        playerIds: [player.id],
+        playerPayments: [
+          {
+            playerId: player.id,
+            playerName: player.name,
+            quota: deltaQuota,
+            extras: deltaItems,
+            amount: deltaAmount,
+          },
+        ],
+        adjustmentOf: originalIds[0],
+        adjustmentType:
+          deltaAmount < -0.005 ? "storno" : "integrazione",
+        note:
+          `Rettifica collegata alle operazioni originali: ${originalIds.join(", ")}.`,
+        cancelled: false,
+      });
+    }
+
+    const stockChanges = new Map<string, number>();
+      
+    if (
+      input.paymentMethod === "misto" &&
+      remainingCashForNewPayments > 0.005
+    ) {
+      return {
+        ok: false,
+        error:
+          "I contanti indicati superano il totale dei nuovi incassi da registrare.",
+      };
+    }
+
+
+    for (const player of session.players) {
+      for (const extra of player.extras) {
+        stockChanges.set(
+          extra.productId,
+          round(
+            (stockChanges.get(extra.productId) ?? 0) - extra.qty,
+          ),
+        );
+      }
+    }
+
+    for (const player of updatedPlayers) {
+      for (const extra of player.extras) {
+        stockChanges.set(
+          extra.productId,
+          round(
+            (stockChanges.get(extra.productId) ?? 0) + extra.qty,
+          ),
+        );
+      }
+    }
+
+    for (const [productId, change] of stockChanges) {
+      if (Math.abs(change) < 0.0001) continue;
+
+      const product = db.products.find(
+        (item) => item.id === productId,
+      );
+
+      if (!product) continue;
+
+      if (
+        change > 0 &&
+        !db.settings.negativeStock &&
+        product.stock < change
+      ) {
+        return {
+          ok: false,
+          error:
+            `Scorte insufficienti per ${product.name}. ` +
+            "Non posso aggiungere questo extra alla partita.",
+        };
       }
     }
 
     set((d) => {
-      d.sessions = d.sessions.map((current) => {
-        if (current.id !== sessionId || !current.closed) {
-          return current;
-        }
-
-        return {
-          ...current,
-          total: round(input.total),
-          players: current.players.map((player) => {
-            if (player.paid) {
-              return player;
+      d.sessions = d.sessions.map((current) =>
+        current.id === sessionId
+          ? {
+              ...current,
+              total: round(input.total),
+              players: updatedPlayers,
             }
+          : current,
+      );
 
-            const updated = input.players.find(
-              (item) => item.id === player.id,
-            );
+      if (session.bookingId) {
+        d.bookings = d.bookings.map((booking) =>
+          booking.id === session.bookingId
+            ? {
+                ...booking,
+                participants: updatedPlayers,
+                players: updatedPlayers.map((player) => player.name),
+                price: round(
+                  updatedPlayers.reduce(
+                    (sum, player) => sum + player.quota,
+                    0,
+                  ),
+                ),
+              }
+            : booking,
+        );
+      }
 
-            if (!updated) {
-              return player;
-            }
+      d.transactions = [...adjustments, ...d.transactions];
 
-            return {
-              ...player,
-              name: updated.name,
-              quota: round(updated.quota),
-            };
-          }),
-        };
-      });
+      for (const [productId, change] of stockChanges) {
+        if (Math.abs(change) < 0.0001) continue;
+
+        const product = d.products.find(
+          (item) => item.id === productId,
+        );
+
+        if (!product) continue;
+
+        pushMovement(
+          d,
+          product,
+          change > 0 ? "prodotto_campo" : "storno",
+          -change,
+          "Partita · Rettifica extra",
+          sessionId,
+          "Rettifica automatica delle scorte dopo la modifica della partita.",
+        );
+      }
     });
 
     return { ok: true };

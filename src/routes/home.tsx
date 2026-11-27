@@ -109,6 +109,7 @@ function HomePage() {
   const [view, setView] = useState<"3d" | "2d">("3d");
   const [selected, setSelected] = useState<string | null>(null);
   const [newOpen, setNewOpen] = useState(false);
+  const [bookingOnly, setBookingOnly] = useState(false);
   const [romeHour, setRomeHour] = useState(() => getRomeHour());
   const [now, setNow] = useState(() => new Date());
   const [pageHeight, setPageHeight] = useState<number | null>(null);
@@ -129,45 +130,7 @@ function HomePage() {
     const timer = window.setInterval(updateClock, 15_000);
     return () => window.clearInterval(timer);
   }, []);
-  // Avvia automaticamente le prenotazioni quando raggiungono l'orario di inizio.
-  useEffect(() => {
-    const currentDate = dateKey(now);
-    const currentMinute = minutesNow(now);
 
-    db.bookings.forEach((booking) => {
-      if (
-        booking.cancelled ||
-        booking.kind === "manutenzione" ||
-        booking.date !== currentDate
-      ) {
-        return;
-      }
-
-      const start = toMin(booking.start);
-      const end = toMin(booking.end);
-
-      if (currentMinute < start || currentMinute >= end) return;
-
-      const linkedSession = db.sessions.find(
-        (session) => session.bookingId === booking.id && !session.closed,
-      );
-
-      if (linkedSession) return;
-
-      const activeCourtSession = db.sessions.find(
-        (session) =>
-          !session.closed && session.courtId === booking.courtId,
-      );
-
-      if (activeCourtSession) return;
-
-      try {
-        courtSessions.checkIn(booking);
-      } catch (error) {
-        console.error("Avvio automatico della prenotazione non riuscito:", error);
-      }
-    });
-  }, [now, db.bookings, db.sessions]);
   // Misura lo spazio reale disponibile nella finestra,
   // tenendo conto dell'AppShell, dell'intestazione e dei pulsanti.
   useEffect(() => {
@@ -418,10 +381,16 @@ function HomePage() {
   const todayCount = todayTransactions.length;
   const lowStock = db.products.filter((p) => p.stock <= p.minStock).length;
 
-  const court = db.courts.find((c) => c.id === selected) ?? null;
+    const court = db.courts.find((c) => c.id === selected) ?? null;
   const session = court ? (sessionByCourt.get(court.id) ?? null) : null;
   const booking = court ? (bookingByCourt.get(court.id) ?? null) : null;
   const upcomingBooking = court ? (nextBookingByCourt.get(court.id) ?? null) : null;
+
+  const canPayBooking = Boolean(booking && !session);
+
+  useEffect(() => {
+    setBookingOnly(false);
+  }, [selected, booking?.id]);
 
   const compactMap = mapSize.width < 760;
   const tinyMap = mapSize.width < 440;
@@ -796,10 +765,13 @@ function HomePage() {
         </div>
       </div>
 
-      <SessionDrawer
+           <SessionDrawer
         court={court}
         session={session}
         booking={booking}
+        bookingOnly={bookingOnly}
+        canPayBooking={canPayBooking}
+        onToggleBookingOnly={setBookingOnly}
         upcomingBooking={upcomingBooking}
         onClose={() => setSelected(null)}
         onStart={() => setNewOpen(true)}
