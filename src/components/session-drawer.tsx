@@ -319,13 +319,17 @@ export function SessionDrawer({
     toast.success("Prezzo, partecipanti e quote salvati.");
   };
 
-  const updateClosedPlayer = (
+    const updateClosedPlayer = (
     playerId: string,
-    patch: Partial<Pick<Player, "name" | "quota">>,
+    patch: Partial<
+      Pick<Player, "name" | "quota" | "paid" | "extras">
+    >,
   ) => {
+    if (!editingClosedDetails) return;
+
     setClosedPlayers((current) =>
       current.map((item) =>
-        item.id === playerId && !item.paid
+        item.id === playerId
           ? { ...item, ...patch }
           : item,
       ),
