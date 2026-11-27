@@ -419,16 +419,7 @@ export function SessionDrawer({
             )
           ) : (
             <div className="grid gap-2">
-                          {booking && booking.kind !== "manutenzione" && (
-                <Btn
-                  variant="primary"
-                  className="w-full"
-                  onClick={() => onCheckIn(booking)}
-                >
-                  <Users2 className="size-4" /> Check-in{" "}
-                  {booking.start}–{booking.end} · {eur(booking.price)}
-                </Btn>
-              )}
+            
 
               <Btn
                 variant={booking ? "subtle" : "primary"}
