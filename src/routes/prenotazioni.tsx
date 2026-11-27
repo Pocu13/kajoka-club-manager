@@ -149,7 +149,25 @@ function BookingsPage() {
         (session) => session.bookingId === historicalBooking.id,
       ) ?? null
     : null;
-  const openBooking = (booking: Booking) => {
+    const openBooking = (booking: Booking) => {
+    const current = new Date();
+    const currentDate = dateKey(current);
+    const currentMinute = minutesNow(current);
+
+    const isBookingPast =
+      booking.date < currentDate ||
+      (booking.date === currentDate &&
+        toMin(booking.end) <= currentMinute);
+
+    if (isBookingPast) {
+      setDetail(null);
+      setOperationalBookingId(null);
+      setHistoricalBookingId(booking.id);
+      return;
+    }
+
+    setHistoricalBookingId(null);
+
     const linkedSession = db.sessions.find(
       (session) => session.bookingId === booking.id,
     );
