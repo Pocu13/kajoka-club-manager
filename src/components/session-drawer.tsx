@@ -70,8 +70,7 @@ export function SessionDrawer({
         }
       : sourceSession;
 
-  const db = useDB();
-  const db = useDB();
+    const db = useDB();
   const [selPlayer, setSelPlayer] = useState<string | null>(null);
   const [payOpen, setPayOpen] = useState(false);
   const [payIds, setPayIds] = useState<string[]>([]);
