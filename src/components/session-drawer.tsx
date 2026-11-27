@@ -168,7 +168,6 @@ export function SessionDrawer({
     setPayIds([]);
     setEditQuotas(false);
         setEditingClosedDetails(false);
-        setEditingClosedDetails(false);
   }, [session?.id, session?.closed]);
 
   if (!court) return null;
