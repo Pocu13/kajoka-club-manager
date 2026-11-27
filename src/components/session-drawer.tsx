@@ -437,7 +437,6 @@ export function SessionDrawer({
     setEditingClosedDetails(false);
     toast.success("Resoconto della partita aggiornato.");
   };
-  };
 
   return (
     <>
@@ -1128,19 +1127,6 @@ export function SessionDrawer({
             />
           </div>
             </Panel>
-
-            <WhatsAppShare
-              title="Invia riepilogo partita su WhatsApp"
-              text={sessionSummary(
-                {
-                  ...session,
-                  total: Number(closedTotal.replace(",", ".")) || session.total,
-                  players: closedPlayers,
-                },
-                court.name,
-              )}
-            />
-          </div>
         ) : (
           <div className="space-y-5">
             <Panel className="p-4">
