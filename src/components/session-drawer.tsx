@@ -355,12 +355,14 @@ export function SessionDrawer({
       }
     }
 
-    const result = courtSessions.updateClosedDetails(session.id, {
+        const result = courtSessions.updateClosedDetails(session.id, {
       total: Math.round(total * 100) / 100,
       players: closedPlayers.map((item) => ({
         id: item.id,
         name: item.name.trim(),
         quota: item.quota,
+        paid: item.paid,
+        extras: item.extras,
       })),
     });
 
