@@ -468,20 +468,8 @@ function BookingsPage() {
     </div>
   );
 }
-      <SessionDrawer
+          <SessionDrawer
         court={operationalCourt}
-        session={operationalSession}
-        booking={operationalBooking}
-        bookingOnly={!!operationalBooking && !operationalSession}
-        upcomingBooking={null}
-        onClose={() => {
-          const bookingId = operationalBooking?.id ?? null;
-          setOperationalBookingId(null);
-          if (bookingId) setDetail(bookingId);
-        }}
-        onStart={() => setOperationalBookingId(null)}
-        onCheckIn={(b) => {
-}
 function BookingForm({
   open,
   onClose,
