@@ -989,6 +989,97 @@ function BookingDetail({
     return true;
   };
 
+    const distributeQuotas = (
+    players: Player[],
+    targetTotal: number,
+  ) => {
+    const paidTotal = players
+      .filter((player) => player.paid)
+      .reduce((sum, player) => sum + player.quota, 0);
+
+    const unpaid = players.filter((player) => !player.paid);
+    const remaining = Math.max(0, targetTotal - paidTotal);
+    const quota = unpaid.length
+      ? Math.ceil((remaining / unpaid.length) * 2) / 2
+      : 0;
+
+    return players.map((player) =>
+      player.paid ? player : { ...player, quota },
+    );
+  };
+
+  const updatePlayerQuota = (
+    playerId: string,
+    delta: number,
+  ) => {
+    const selected = participants.find(
+      (player) => player.id === playerId,
+    );
+
+    if (!selected || selected.paid) return;
+
+    const totalBefore = participants.reduce(
+      (sum, player) => sum + player.quota,
+      0,
+    );
+
+    const newQuota = Math.max(
+      0,
+      Math.round((selected.quota + delta) * 2) / 2,
+    );
+
+    const otherUnpaid = participants.filter(
+      (player) => !player.paid && player.id !== playerId,
+    );
+
+    const paidTotal = participants
+      .filter((player) => player.paid)
+      .reduce((sum, player) => sum + player.quota, 0);
+
+    const remaining = Math.max(
+      0,
+      totalBefore - paidTotal - newQuota,
+    );
+
+    const otherQuota = otherUnpaid.length
+      ? Math.ceil((remaining / otherUnpaid.length) * 2) / 2
+      : 0;
+
+    const next = participants.map((player) => {
+      if (player.id === playerId) {
+        return { ...player, quota: newQuota };
+      }
+
+      if (!player.paid && otherUnpaid.length) {
+        return { ...player, quota: otherQuota };
+      }
+
+      return player;
+    });
+
+    updateParticipants(next);
+
+    setBookingPriceValue(
+      next.reduce((sum, player) => sum + player.quota, 0).toFixed(2),
+    );
+  };
+
+  const updateTotalPrice = (value: string) => {
+    setBookingPriceValue(value);
+
+    const target = Number(value.replace(",", "."));
+
+    if (!Number.isFinite(target) || target < 0) return;
+
+    const next = distributeQuotas(participants, target);
+
+    updateParticipants(next);
+
+    setBookingPriceValue(
+      next.reduce((sum, player) => sum + player.quota, 0).toFixed(2),
+    );
+  };
+
   const addParticipant = () => {
     if (
       participants.length >= participantLimit ||
@@ -997,7 +1088,7 @@ function BookingDetail({
       return;
     }
 
-    updateParticipants([
+    const next = [
       ...participants,
       {
         id: `booking-${booking.id}-player-${Date.now()}`,
@@ -1006,7 +1097,9 @@ function BookingDetail({
         paid: false,
         extras: [],
       },
-    ]);
+    ];
+
+    updateParticipants(distributeQuotas(next, bookingPriceNumber));
   };
 
   const removeParticipant = (playerId: string) => {
@@ -1022,11 +1115,11 @@ function BookingDetail({
       return;
     }
 
-    updateParticipants(
-      participants.filter(
-        (player) => player.id !== playerId,
-      ),
+    const next = participants.filter(
+      (player) => player.id !== playerId,
     );
+
+    updateParticipants(distributeQuotas(next, bookingPriceNumber));
   };
 
   const submitPrepayment = () => {
@@ -1153,70 +1246,65 @@ function BookingDetail({
                   <Pencil className="size-4" /> Modifica
                 </Btn>
               )}
-
-              {canCancel ? (
-                <Btn
-                  variant="danger"
-                  onClick={() => setConfirm(true)}
-                >
-                  <Trash2 className="size-4" /> Annulla
-                </Btn>
-              ) : (
-                <Btn
-                  variant="outline"
-                  onClick={onClose}
-                >
-                  Chiudi
-                </Btn>
-              )}
-            </div>
-          ) : undefined
-        }
-      >
-        <div className="space-y-4">
-          <div className="flex w-full flex-wrap items-center gap-2">
-            <Badge
-              tone={
-                booking.cancelled ? "danger" : "primary"
-              }
-            >
-              {booking.cancelled
-                ? "ANNULLATA"
-                : KIND_LABEL[booking.kind].toUpperCase()}
-            </Badge>
-
-            <Badge tone="neutral">
-              {booking.date}
-            </Badge>
-
-            {booking.source === "ai" && (
-              <Badge tone="info">DA AI</Badge>
-            )}
-
-          </div>
-         {!booking.cancelled &&
-  booking.kind !== "manutenzione" &&
-  (booking.date > currentDate ||
-    (booking.date === currentDate &&
-      currentMinute < toMin(booking.start))) && (
-              <Panel className="p-3">
-                <Toggle
-                  checked={false}
-                  onChange={(enabled) => {
-                    if (enabled) onPay();
-                  }}
-                  label="PAGA"
-                  hint="Apri la scheda operativa con quote, extra e pagamenti."
+          {editing && (
+            <Panel className="space-y-3 p-4">
+              <Field label="Prezzo totale prenotazione (€)">
+                <Input
+                  type="number"
+                  min="0"
+                  step="0.50"
+                  value={bookingPriceValue}
+                  onChange={(event) =>
+                    updateTotalPrice(event.target.value)
+                  }
                 />
-              </Panel>
-            )}
-          {booking.seriesId && booking.recurrence && (
-            <Panel className="space-y-2 p-4">
-              <div className="flex items-center gap-2 text-sm font-semibold">
-                <Repeat className="size-4 text-primary" />
-                Serie ricorrente · {seriesCount} blocchi attivi
+              </Field>
+
+              <Field label="Campo">
+                <Select
+                  value={eCourt}
+                  onChange={(e) => setECourt(e.target.value)}
+                >
+                  {db.courts
+                    .filter((c) => c.active)
+                    .map((c) => (
+                      <option key={c.id} value={c.id}>
+                        {c.name}
+                      </option>
+                    ))}
+                </Select>
+              </Field>
+
+              <div className="grid grid-cols-2 gap-3">
+                <Field label="Ora inizio">
+                  <Input
+                    type="time"
+                    step={1800}
+                    value={eStart}
+                    onChange={(e) => setEStart(e.target.value)}
+                  />
+                </Field>
+
+                <Field label="Durata">
+                  <Select
+                    value={eDur}
+                    onChange={(e) => setEDur(Number(e.target.value))}
+                  >
+                    {[60, 90, 120].map((m) => (
+                      <option key={m} value={m}>
+                        {m} min
+                      </option>
+                    ))}
+                  </Select>
+                </Field>
               </div>
 
+              <p className="text-xs text-muted-foreground">
+                Se anche un solo blocco va in conflitto,
+                nessuna modifica viene applicata.
+              </p>
+            </Panel>
+          )}
               <div className="mono text-xs text-muted-foreground">
                 {FREQ_LABEL[booking.recurrence.freq]} fino al{" "}
                 {booking.recurrence.until}
@@ -1275,94 +1363,81 @@ function BookingDetail({
                     ))}
                 </Select>
               </Field>
+            <div className="space-y-2">
+              {participants.map((player, index) => (
+                <div
+                  key={player.id}
+                  className="flex items-center gap-2 rounded-lg border border-border bg-surface-container px-3 py-2"
+                >
+                  <span className="mono flex size-6 shrink-0 items-center justify-center rounded-full bg-primary/20 text-[11px] text-primary">
+                    {index + 1}
+                  </span>
 
-              <div className="grid grid-cols-2 gap-3">
-                <Field label="Ora inizio">
                   <Input
-                    type="time"
-                    step={1800}
-                    value={eStart}
-                    onChange={(e) =>
-                      setEStart(e.target.value)
+                    value={player.name}
+                    placeholder={`Giocatore ${index + 1}`}
+                    disabled={
+                      !editing || player.paid || booking.cancelled
                     }
+                    onChange={(event) =>
+                      setParticipants((current) =>
+                        current.map((item) =>
+                          item.id === player.id
+                            ? { ...item, name: event.target.value }
+                            : item,
+                        ),
+                      )
+                    }
+                    className="min-w-0"
                   />
-                </Field>
 
-                <Field label="Durata">
-                  <Select
-                    value={eDur}
-                    onChange={(e) =>
-                      setEDur(Number(e.target.value))
-                    }
-                  >
-                    {[60, 90, 120].map((m) => (
-                      <option key={m} value={m}>
-                        {m} min
-                      </option>
-                    ))}
-                  </Select>
-                </Field>
-              </div>
+                  <div className="flex shrink-0 items-center gap-1">
+                    <button
+                      type="button"
+                      className="rounded-md border border-border px-2 py-1 disabled:opacity-40"
+                      disabled={!editing || player.paid || booking.cancelled || player.quota < 0.5}
+                      onClick={() => updatePlayerQuota(player.id, -0.5)}
+                    >
+                      −
+                    </button>
 
-              <p className="text-xs text-muted-foreground">
-                Se anche un solo blocco va in conflitto,
-                nessuna modifica viene applicata.
-              </p>
-            </Panel>
-          )}
+                    <span className="mono min-w-14 text-center text-sm">
+                      {eur(player.quota)}
+                    </span>
 
-          <Panel className="space-y-3 p-4">
-            <Row
-              label="Campo"
-              value={court?.name ?? "—"}
-            />
-            <Row
-              label="Orario"
-              value={`${booking.start} → ${booking.end}`}
-            />
-            <Row
-              label="Prezzo totale prenotazione"
-              value={`${Number(bookingPriceValue).toFixed(2)} €`}
-            />
+                    <button
+                      type="button"
+                      className="rounded-md border border-border px-2 py-1 disabled:opacity-40"
+                      disabled={!editing || player.paid || booking.cancelled}
+                      onClick={() => updatePlayerQuota(player.id, 0.5)}
+                    >
+                      +
+                    </button>
+                  </div>
 
-            <Row
-              label="Creata da"
-              value={booking.createdBy}
-            />
-          </Panel>
-                    {!booking.cancelled &&
-            booking.kind !== "manutenzione" && (
-              <WhatsAppShare
-                title="Condividi su WhatsApp"
-                text={bookingMessage(
-                  booking,
-                  court?.name ?? "Campo",
-                )}
-              />
-            )}
+                  {player.paid ? (
+                    <Badge tone="success">PAGATO</Badge>
+                  ) : (
+                    <Badge tone="warning">DA PAGARE</Badge>
+                  )}
 
-          <div>
-            <div className="mb-2 flex items-center justify-between gap-2">
-              <div className="label-caps text-muted-foreground">
-                Giocatori e quote
-              </div>
-
-              
-                           {editing &&
-                !fixedParticipants &&
-                participants.length < participantLimit &&
-                !booking.cancelled && (
-                  <Btn
-                    variant="outline"
-                    size="sm"
-                    onClick={addParticipant}
-                  >
-                    <Plus className="size-3" /> Aggiungi
-                  </Btn>
-                )}
-
+                  {!fixedParticipants &&
+                    participants.length > 2 &&
+                    !player.paid &&
+                    !booking.cancelled && (
+                      <button
+                        type="button"
+                        disabled={!editing}
+                        className="rounded p-1 text-muted-foreground hover:text-destructive disabled:opacity-40"
+                        title="Rimuovi giocatore"
+                        onClick={() => removeParticipant(player.id)}
+                      >
+                        <Trash2 className="size-4" />
+                      </button>
+                    )}
+                </div>
+              ))}
             </div>
-
             <div className="space-y-2">
               {participants.map((player, index) => (
                 <div
