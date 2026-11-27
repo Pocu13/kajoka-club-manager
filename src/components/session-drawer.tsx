@@ -1076,7 +1076,7 @@ export function SessionDrawer({
                               <span className="flex items-center gap-2">
                                 {eur(extra.price * extra.qty)}
 
-                                {!p.paid && (
+                               {!displayOnly && !p.paid && (
                                   <button
                                     className="text-danger"
                                     onClick={(event) => {
@@ -1109,7 +1109,7 @@ export function SessionDrawer({
                           </div>
                         </div>
                       )}
-{!displayOnly && !p.paid && (!p.paid && (
+{!displayOnly && !p.paid && (
                         <div className="mt-3 flex justify-end">
                           <Btn
                             size="sm"
@@ -1131,7 +1131,7 @@ export function SessionDrawer({
                   );
                 })}
               </div>
-                            {editQuotas && (
+               {!displayOnly && editQuotas && (
                 <Btn
                   variant="primary"
                   size="sm"
@@ -1158,7 +1158,7 @@ export function SessionDrawer({
               )}
             </div>
 
-            {player && !player.paid && (
+           {!displayOnly && player && !player.paid && (
               <div>
                 <div className="mb-2 flex items-center justify-between">
                   <span className="label-caps text-muted-foreground">
@@ -1218,7 +1218,7 @@ export function SessionDrawer({
       </Drawer>
 
       <Modal
-        open={payOpen && !!session && !session.closed}
+        open={!displayOnly && payOpen && !!session && !session.closed}
         onClose={() => setPayOpen(false)}
         title="Incasso quota campo"
         footer={
