@@ -245,11 +245,26 @@ function BookingsPage() {
 
       <Panel className="flex flex-wrap items-center gap-x-5 gap-y-2 px-4 py-3">
         <span className="label-caps text-muted-foreground">Legenda stati:</span>
-        <LegendDot cls="bg-[#8bc34a]" label="Libero / Disponibile" />
-        <LegendDot cls="bg-[#c0392b]" label="Prenotato" />
-        <LegendDot cls="bg-[#6c4fc1]" label="Allenamento serie" />
-        <LegendDot cls="bg-[#1d3b26]" label="Lezione privata / SAP" />
-        <LegendDot cls="bg-[#1b472b]" label="Slot passato" />
+                <span className="inline-flex items-center gap-2 text-xs text-muted-foreground">
+          <span className="size-2.5 rounded-full bg-[#8bc34a]" />
+          Libero / Disponibile
+        </span>
+        <span className="inline-flex items-center gap-2 text-xs text-muted-foreground">
+          <span className="size-2.5 rounded-full bg-[#c0392b]" />
+          Prenotato
+        </span>
+        <span className="inline-flex items-center gap-2 text-xs text-muted-foreground">
+          <span className="size-2.5 rounded-full bg-[#6c4fc1]" />
+          Allenamento serie
+        </span>
+        <span className="inline-flex items-center gap-2 text-xs text-muted-foreground">
+          <span className="size-2.5 rounded-full bg-[#1d3b26]" />
+          Lezione privata / SAP
+        </span>
+        <span className="inline-flex items-center gap-2 text-xs text-muted-foreground">
+          <span className="size-2.5 rounded-full bg-[#1b472b]" />
+          Slot passato
+        </span>
         <span className="mono ml-auto text-xs text-muted-foreground">
           {MONTHS[day.getMonth()]} {day.getDate()} · intervallo slot: 60 min
         </span>
