@@ -997,7 +997,7 @@ export function SessionDrawer({
                   return (
                     <div
                       key={p.id}
-                      onClick={() => setSelPlayer(p.id)}
+                      onClick={displayOnly ? undefined : () => setSelPlayer(p.id)}
                       className={cn(
                         "cursor-pointer rounded-xl border p-3 transition-colors",
                         active
