@@ -129,7 +129,45 @@ function HomePage() {
     const timer = window.setInterval(updateClock, 15_000);
     return () => window.clearInterval(timer);
   }, []);
+  // Avvia automaticamente le prenotazioni quando raggiungono l'orario di inizio.
+  useEffect(() => {
+    const currentDate = dateKey(now);
+    const currentMinute = minutesNow(now);
 
+    db.bookings.forEach((booking) => {
+      if (
+        booking.cancelled ||
+        booking.kind === "manutenzione" ||
+        booking.date !== currentDate
+      ) {
+        return;
+      }
+
+      const start = toMin(booking.start);
+      const end = toMin(booking.end);
+
+      if (currentMinute < start || currentMinute >= end) return;
+
+      const linkedSession = db.sessions.find(
+        (session) => session.bookingId === booking.id && !session.closed,
+      );
+
+      if (linkedSession) return;
+
+      const activeCourtSession = db.sessions.find(
+        (session) =>
+          !session.closed && session.courtId === booking.courtId,
+      );
+
+      if (activeCourtSession) return;
+
+      try {
+        courtSessions.checkIn(booking);
+      } catch (error) {
+        console.error("Avvio automatico della prenotazione non riuscito:", error);
+      }
+    });
+  }, [now, db.bookings, db.sessions]);
   // Misura lo spazio reale disponibile nella finestra,
   // tenendo conto dell'AppShell, dell'intestazione e dei pulsanti.
   useEffect(() => {
