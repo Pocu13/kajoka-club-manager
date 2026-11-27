@@ -674,7 +674,7 @@ const fixedBookingParticipants = court.type === "padel" && !displayOnly;
       <Plus className="size-3" /> Aggiungi
     </Btn>
   )}
-
+                      </div>
                     <div className="space-y-2">
                       {bookingParticipants.map((item, index) => (
                         <div
