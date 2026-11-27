@@ -960,20 +960,28 @@ const fixedBookingParticipants = court.type === "padel" && !displayOnly;
               </div>
 
 
+              
               <div className="space-y-2">
                 {session.players.map((p, index) => {
                   const active = player?.id === p.id;
+                  const closedItem =
+                    closedPlayers.find((item) => item.id === p.id) ?? p;
+                  const visiblePlayer = editingClosedDetails
+                    ? closedItem
+                    : p;
 
                   return (
                     <div
                       key={p.id}
-                      onClick={displayOnly ? undefined : () => setSelPlayer(p.id)}
+                      onClick={
+                        displayOnly ? undefined : () => setSelPlayer(p.id)
+                      }
                       className={cn(
                         "cursor-pointer rounded-xl border p-3 transition-colors",
                         active
                           ? "border-primary/70 bg-primary/5"
                           : "border-border bg-surface-container hover:bg-surface-high",
-                        p.paid && "opacity-80",
+                        visiblePlayer.paid && "opacity-80",
                       )}
                     >
                       <div className="flex items-center gap-3">
@@ -985,122 +993,226 @@ const fixedBookingParticipants = court.type === "padel" && !displayOnly;
                               : "bg-surface-highest text-muted-foreground",
                           )}
                         >
-                         {`G${index + 1}`}
+                          {`G${index + 1}`}
                         </span>
 
                         <div className="min-w-0 flex-1">
-                          <div className="truncate text-sm font-semibold">
-                            {p.name}
-                          </div>
-                          <div className="mono text-[11px] text-muted-foreground">
-                            Quota: {eur(p.quota)} · Extra:{" "}
-                            {eur(
-                              p.extras.reduce(
-                                (sum, e) => sum + e.price * e.qty,
-                                0,
-                              ),
-                            )}
-                          </div>
+                          {editingClosedDetails ? (
+                            <Input
+                              value={visiblePlayer.name}
+                              placeholder={`Giocatore ${index + 1}`}
+                              onChange={(event) =>
+                                updateClosedPlayer(p.id, {
+                                  name: event.target.value,
+                                })
+                              }
+                            />
+                          ) : (
+                            <div className="truncate text-sm font-semibold">
+                              {visiblePlayer.name}
+                            </div>
+                          )}
+
+                          {!editingClosedDetails && (
+                            <div className="mono text-[11px] text-muted-foreground">
+                              Quota: {eur(visiblePlayer.quota)} · Extra:{" "}
+                              {eur(
+                                visiblePlayer.extras.reduce(
+                                  (sum, extra) =>
+                                    sum + extra.price * extra.qty,
+                                  0,
+                                ),
+                              )}
+                            </div>
+                          )}
                         </div>
 
-                        {p.paid ? (
-                          <Badge tone="success">✓ PAGATO</Badge>
-                        ) : (
-                          <Badge tone="primary" dot>
-                            DA PAGARE
-                          </Badge>
-                        )}
+                        {!editingClosedDetails &&
+                          (visiblePlayer.paid ? (
+                            <Badge tone="success">✓ PAGATO</Badge>
+                          ) : (
+                            <Badge tone="primary" dot>
+                              DA PAGARE
+                            </Badge>
+                          ))}
                       </div>
 
-                     {!displayOnly && editQuotas && !p.paid && (
-                        <div className="mt-3 flex items-center gap-2">
-                          <Input
-                            type="number"
-                            step="0.5"
-                            value={quotaDraft[p.id] ?? String(p.quota)}
-                            onChange={(e) =>
-                              setQuotaDraft((draft) => ({
-                                ...draft,
-                                [p.id]: e.target.value,
-                              }))
-                            }
-                            className="h-8 w-28"
-                          />
-                          <span className="text-xs text-muted-foreground">
-                            quota giocatore
-                          </span>
-                        </div>
-                      )}
+                      {editingClosedDetails ? (
+                        <div className="mt-3 space-y-3">
+                          <div className="grid grid-cols-2 gap-3">
+                            <Field label="Quota (€)">
+                              <Input
+                                type="number"
+                                min="0"
+                                step="0.01"
+                                value={String(visiblePlayer.quota)}
+                                onChange={(event) =>
+                                  updateClosedPlayer(p.id, {
+                                    quota: Number(event.target.value),
+                                  })
+                                }
+                              />
+                            </Field>
 
-                      {p.extras.length > 0 && (
-                        <div className="mt-3 space-y-1 rounded-lg border border-border bg-surface px-3 py-2">
-                          {p.extras.map((extra) => (
-                            <div
-                              key={extra.productId}
-                              className="mono flex items-center justify-between text-[11px]"
-                            >
-                              <span>
-                                {extra.qty}× {extra.name}
-                              </span>
-
-                              <span className="flex items-center gap-2">
-                                {eur(extra.price * extra.qty)}
-
-                               {!displayOnly && !p.paid && (
-                                  <button
-                                    className="text-danger"
-                                    onClick={(event) => {
-                                      event.stopPropagation();
-                                      if (bookingOnly && booking) {
-                                        courtSessions.removeBookingExtra(
-                                          booking.id,
-                                          p.id,
-                                          extra.productId,
-                                        );
-                                      } else {
-                                        courtSessions.removeExtra(
-                                          session.id,
-                                          p.id,
-                                          extra.productId,
-                                        );
-                                      }
-                                    }}
-                                  >
-                                    <Minus className="size-3" />
-                                  </button>
-                                )}
-                              </span>
+                            <div className="flex items-end">
+                              <Toggle
+                                checked={visiblePlayer.paid}
+                                onChange={(checked) =>
+                                  updateClosedPlayer(p.id, {
+                                    paid: checked,
+                                  })
+                                }
+                                label="Pagato"
+                                hint="Stato del pagamento"
+                              />
                             </div>
-                          ))}
+                          </div>
 
-                          <div className="mono flex justify-between border-t border-border pt-1 text-[11px] font-bold">
-                            <span>Totale giocatore</span>
-                            <span>{eur(playerTotal(p.id))}</span>
+                          <div className="space-y-2">
+                            <div className="label-caps text-muted-foreground">
+                              Extra del giocatore
+                            </div>
+
+                            {visiblePlayer.extras.length === 0 && (
+                              <div className="text-xs text-muted-foreground">
+                                Nessun extra registrato.
+                              </div>
+                            )}
+
+                            {visiblePlayer.extras.map((extra) => (
+                              <div
+                                key={extra.productId}
+                                className="rounded-lg border border-border bg-surface p-2"
+                              >
+                                <div className="mb-2 flex items-center justify-between gap-2">
+                                  <span className="text-xs font-semibold">
+                                    {extra.name}
+                                  </span>
+                                  <button
+                                    type="button"
+                                    className="text-danger"
+                                    onClick={() =>
+                                      removeClosedExtra(
+                                        p.id,
+                                        extra.productId,
+                                      )
+                                    }
+                                  >
+                                    <Trash2 className="size-3.5" />
+                                  </button>
+                                </div>
+
+                                <div className="grid grid-cols-2 gap-2">
+                                  <Field label="Quantità">
+                                    <Input
+                                      type="number"
+                                      min="0.01"
+                                      step="0.01"
+                                      value={String(extra.qty)}
+                                      onChange={(event) =>
+                                        updateClosedExtra(
+                                          p.id,
+                                          extra.productId,
+                                          {
+                                            qty: Number(event.target.value),
+                                          },
+                                        )
+                                      }
+                                    />
+                                  </Field>
+
+                                  <Field label="Prezzo unitario (€)">
+                                    <Input
+                                      type="number"
+                                      min="0"
+                                      step="0.01"
+                                      value={String(extra.price)}
+                                      onChange={(event) =>
+                                        updateClosedExtra(
+                                          p.id,
+                                          extra.productId,
+                                          {
+                                            price: Number(event.target.value),
+                                          },
+                                        )
+                                      }
+                                    />
+                                  </Field>
+                                </div>
+                              </div>
+                            ))}
                           </div>
                         </div>
-                      )}
-{!displayOnly && !p.paid && (
-                        <div className="mt-3 flex justify-end">
-                          <Btn
-                            size="sm"
-                            variant="outline"
-                            onClick={(event) => {
-                              event.stopPropagation();
-                              setPayIds([p.id]);
-                              setPayQuotaAmount(String(p.quota));
-                              setMethod("carta");
-                              setCash("0");
-                              setPayOpen(true);
-                            }}
-                          >
-                            Salda {eur(playerTotal(p.id))}
-                          </Btn>
-                        </div>
+                      ) : (
+                        <>
+                          {!displayOnly && editQuotas && !p.paid && (
+                            <div className="mt-3 flex items-center gap-2">
+                              <Input
+                                type="number"
+                                step="0.5"
+                                value={quotaDraft[p.id] ?? String(p.quota)}
+                                onChange={(event) =>
+                                  setQuotaDraft((draft) => ({
+                                    ...draft,
+                                    [p.id]: event.target.value,
+                                  }))
+                                }
+                                className="h-8 w-28"
+                              />
+                              <span className="text-xs text-muted-foreground">
+                                quota giocatore
+                              </span>
+                            </div>
+                          )}
+
+                          {visiblePlayer.extras.length > 0 && (
+                            <div className="mt-3 space-y-1 rounded-lg border border-border bg-surface px-3 py-2">
+                              {visiblePlayer.extras.map((extra) => (
+                                <div
+                                  key={extra.productId}
+                                  className="mono flex items-center justify-between text-[11px]"
+                                >
+                                  <span>
+                                    {extra.qty}× {extra.name}
+                                  </span>
+                                  <span>
+                                    {eur(extra.price * extra.qty)}
+                                  </span>
+                                </div>
+                              ))}
+
+                              <div className="mono flex justify-between border-t border-border pt-1 text-[11px] font-bold">
+                                <span>Totale giocatore</span>
+                                <span>{eur(playerTotal(p.id))}</span>
+                              </div>
+                            </div>
+                          )}
+
+                          {!displayOnly && !p.paid && (
+                            <div className="mt-3 flex justify-end">
+                              <Btn
+                                size="sm"
+                                variant="outline"
+                                onClick={(event) => {
+                                  event.stopPropagation();
+                                  setPayIds([p.id]);
+                                  setPayQuotaAmount(String(p.quota));
+                                  setMethod("carta");
+                                  setCash("0");
+                                  setPayOpen(true);
+                                }}
+                              >
+                                Salda {eur(playerTotal(p.id))}
+                              </Btn>
+                            </div>
+                          )}
+                        </>
                       )}
                     </div>
                   );
                 })}
               </div>
+
                {!displayOnly && editQuotas && (
                 <Btn
                   variant="primary"
