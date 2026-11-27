@@ -36,6 +36,7 @@ type SessionDrawerProps = {
   booking: Booking | null;
   bookingOnly?: boolean;
   canPayBooking?: boolean;
+  displayOnly?: boolean;
   onToggleBookingOnly?: (enabled: boolean) => void;
   upcomingBooking: Booking | null;
   onClose: () => void;
@@ -48,6 +49,7 @@ export function SessionDrawer({
   session: sourceSession,
   booking,
   bookingOnly = false,
+  displayOnly = false,
   canPayBooking = false,
   onToggleBookingOnly,
   upcomingBooking,
@@ -383,10 +385,10 @@ export function SessionDrawer({
               ? `Partita conclusa · ${fmtTime(session.startedAt)} · ${session.players.length} giocatori`
               : `Sessione attiva dalle ${fmtTime(session.startedAt)} · ${session.players.length} giocatori`
             : booking
-              ? `Prenotazione attiva ${booking.start}–${booking.end} · ${booking.title}`
+             ? `${displayOnly ? "Prenotazione passata" : "Prenotazione attiva"} ${booking.start}–${booking.end} · ${booking.title}`
               : `Campo libero · ${eur(court.hourlyPrice)} / ora`
         }
-                footer={
+               footer={displayOnly ? null : (
           session ? (
             session.closed ? (
               <div className="rounded-lg border border-border bg-surface-container p-3 text-center text-sm text-muted-foreground">
@@ -525,7 +527,7 @@ export function SessionDrawer({
               </Btn>
             </div>
           )
-        }
+     )}
       >
                 {booking &&
           canPayBooking &&
@@ -956,18 +958,20 @@ export function SessionDrawer({
               </div>
             </Panel>
 
-            <WhatsAppShare
-              title="Invia riepilogo conto su WhatsApp"
-              text={sessionSummary(session, court.name)}
-            />
+                      {!displayOnly && (
+              <WhatsAppShare
+                title="Invia riepilogo conto su WhatsApp"
+                text={sessionSummary(session, court.name)}
+              />
+            )}
 
             <div>
               <div className="mb-2 flex items-center justify-between">
                 <span className="label-caps text-muted-foreground">
                   Ripartizione quota e extra
                 </span>
-
-                <button
+                {!displayOnly && (
+                  <button
                   className="text-xs font-semibold text-primary"
                   onClick={() => {
                     setQuotaDraft(
@@ -982,7 +986,8 @@ export function SessionDrawer({
                   }}
                 >
                   {editQuotas ? "Chiudi" : "Modifica quote"}
-                </button>
+                                </button>
+                )}
               </div>
 
               <div className="space-y-2">
