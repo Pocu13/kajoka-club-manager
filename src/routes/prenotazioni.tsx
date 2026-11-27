@@ -1348,7 +1348,8 @@ function BookingDetail({
               </div>
 
               
-              {!fixedParticipants &&
+                           {editing &&
+                !fixedParticipants &&
                 participants.length < participantLimit &&
                 !booking.cancelled && (
                   <Btn
