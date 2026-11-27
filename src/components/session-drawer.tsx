@@ -962,6 +962,58 @@ const fixedBookingParticipants = court.type === "padel" && !displayOnly;
 
               
               <div className="space-y-2">
+                
+              {editingClosedDetails && (
+                <div className="mb-4 space-y-3 rounded-xl border border-border bg-surface p-3">
+                  <Field label="Prezzo totale della partita (€)">
+                    <Input
+                      type="number"
+                      min="0"
+                      step="0.01"
+                      value={closedTotal}
+                      onChange={(event) =>
+                        setClosedTotal(event.target.value)
+                      }
+                    />
+                  </Field>
+
+                  <Field label="Metodo di pagamento per i nuovi incassi">
+                    <Select
+                      value={closedPaymentMethod}
+                      onChange={(event) =>
+                        setClosedPaymentMethod(
+                          event.target.value as
+                            | "contanti"
+                            | "carta"
+                            | "misto",
+                        )
+                      }
+                    >
+                      <option value="contanti">Contanti</option>
+                      <option value="carta">Carta / POS</option>
+                      <option value="misto">Misto</option>
+                    </Select>
+                  </Field>
+
+                  {closedPaymentMethod === "misto" && (
+                    <Field label="Totale contanti da incassare (€)">
+                      <Input
+                        type="number"
+                        min="0"
+                        step="0.01"
+                        value={closedPaymentCash}
+                        onChange={(event) =>
+                          setClosedPaymentCash(event.target.value)
+                        }
+                      />
+                      <div className="mt-1 text-xs text-muted-foreground">
+                        La parte restante sarà registrata su carta.
+                      </div>
+                    </Field>
+                  )}
+                </div>
+              )}
+
                 {session.players.map((p, index) => {
                   const active = player?.id === p.id;
                   const closedItem =
