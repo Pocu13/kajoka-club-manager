@@ -809,27 +809,53 @@ export const courtSessions = {
     return { ok: true };
   },
 
+  
   removeBookingExtra(bookingId: string, playerId: string, productId: string) {
     set((d) => {
-      d.bookings = d.bookings.map((booking) =>
-        booking.id !== bookingId
-          ? booking
+      const booking = d.bookings.find((item) => item.id === bookingId);
+      const player = booking?.participants?.find(
+        (item) => item.id === playerId,
+      );
+      const extra = player?.extras.find(
+        (item) => item.productId === productId,
+      );
+
+      if (!booking || !player || !extra) return;
+
+      const product = d.products.find((item) => item.id === productId);
+
+      d.bookings = d.bookings.map((item) =>
+        item.id !== bookingId
+          ? item
           : {
-              ...booking,
-              participants: (booking.participants ?? []).map((player) =>
-                player.id !== playerId
-                  ? player
+              ...item,
+              participants: (item.participants ?? []).map((participant) =>
+                participant.id !== playerId
+                  ? participant
                   : {
-                      ...player,
-                      extras: player.extras.filter(
-                        (extra) => extra.productId !== productId,
+                      ...participant,
+                      extras: participant.extras.filter(
+                        (item) => item.productId !== productId,
                       ),
                     },
               ),
             },
       );
+
+      if (product) {
+        pushMovement(
+          d,
+          product,
+          "storno",
+          extra.qty,
+          "Prenotazione · Rimozione extra",
+          bookingId,
+          `Ripristino di ${extra.qty} unità rimosse dalla prenotazione.`,
+        );
+      }
     });
   },
+
 
   /**
    * Registra un pagamento anticipato direttamente sulla prenotazione.
