@@ -654,10 +654,133 @@ export const courtSessions = {
     });
   },
 
+  
+  /**
+   * Gestione operativa anticipata direttamente sulla prenotazione.
+   * Non crea sessioni e non occupa il campo.
+   */
+  updateBookingQuotas(bookingId: string, quotas: Record<string, number>) {
+    set((d) => {
+      d.bookings = d.bookings.map((booking) => {
+        if (booking.id !== bookingId) return booking;
+
+        const participants = (booking.participants ?? []).map((player) => ({
+          ...player,
+          quota: player.paid ? player.quota : Math.max(0, quotas[player.id] ?? player.quota),
+        }));
+
+        return {
+          ...booking,
+          participants,
+          price: round(participants.reduce((sum, player) => sum + player.quota, 0)),
+        };
+      });
+    });
+  },
+
+  addBookingExtra(bookingId: string, playerId: string, productId: string) {
+    const db = getDB();
+    const product = db.products.find((item) => item.id === productId);
+
+    if (!product || !product.active) {
+      return { ok: false, error: "Prodotto non disponibile." };
+    }
+
+    if (product.stock <= 0) {
+      return { ok: false, error: "Prodotto esaurito." };
+    }
+
+    const booking = db.bookings.find((item) => item.id === bookingId);
+    if (!booking) return { ok: false, error: "Prenotazione non trovata." };
+
+    const participant = (booking.participants ?? []).find(
+      (item) => item.id === playerId,
+    );
+
+    if (!participant || participant.paid) {
+      return { ok: false, error: "Giocatore non disponibile." };
+    }
+
+    set((d) => {
+      const currentProduct = d.products.find((item) => item.id === productId);
+      if (!currentProduct || currentProduct.stock <= 0) return;
+
+      d.bookings = d.bookings.map((item) =>
+        item.id !== bookingId
+          ? item
+          : {
+              ...item,
+              participants: (item.participants ?? []).map((player) => {
+                if (player.id !== playerId) return player;
+
+                const existing = player.extras.find(
+                  (extra) => extra.productId === productId,
+                );
+
+                return {
+                  ...player,
+                  extras: existing
+                    ? player.extras.map((extra) =>
+                        extra.productId === productId
+                          ? { ...extra, qty: extra.qty + 1 }
+                          : extra,
+                      )
+                    : [
+                        ...player.extras,
+                        {
+                          productId: currentProduct.id,
+                          name: currentProduct.name,
+                          qty: 1,
+                          price: currentProduct.price,
+                          cost: currentProduct.cost,
+                        },
+                      ],
+                };
+              }),
+            },
+      );
+
+      pushMovement(
+        d,
+        currentProduct,
+        "prodotto_campo",
+        -1,
+        "Prenotazione · Extra giocatore",
+        bookingId,
+        "Extra assegnato prima dell'inizio della partita.",
+      );
+    });
+
+    return { ok: true };
+  },
+
+  removeBookingExtra(bookingId: string, playerId: string, productId: string) {
+    set((d) => {
+      d.bookings = d.bookings.map((booking) =>
+        booking.id !== bookingId
+          ? booking
+          : {
+              ...booking,
+              participants: (booking.participants ?? []).map((player) =>
+                player.id !== playerId
+                  ? player
+                  : {
+                      ...player,
+                      extras: player.extras.filter(
+                        (extra) => extra.productId !== productId,
+                      ),
+                    },
+              ),
+            },
+      );
+    });
+  },
+
   /**
    * Registra un pagamento anticipato direttamente sulla prenotazione.
-   * Il partecipante viene marcato come pagato e la transazione conserva
-   * il riferimento alla prenotazione fino alla creazione della sessione.
+   * La quota non incassata viene redistribuita solo tra gli altri
+   * partecipanti ancora da pagare. Gli extra vengono sempre saldati
+   * per intero.
    */
   payBookingPlayers(
     bookingId: string,
@@ -665,84 +788,118 @@ export const courtSessions = {
     method: PaymentMethod,
     cash: number,
     card: number,
+    quotaAmount?: number,
   ): { ok: boolean; error?: string } {
     const db = getDB();
-    const booking = db.bookings.find((b) => b.id === bookingId);
+    const booking = db.bookings.find((item) => item.id === bookingId);
 
-    if (!booking) return { ok: false, error: "Prenotazione non trovata" };
-
-    const participants = booking.participants ?? [];
-
-    if (!participants.length) {
-      return {
-        ok: false,
-        error: "Prima di registrare il pagamento devi inserire i partecipanti.",
-      };
+    if (!booking) {
+      return { ok: false, error: "Prenotazione non trovata." };
     }
 
+    const participants = booking.participants ?? [];
     const targets = participants.filter(
-      (p) => playerIds.includes(p.id) && !p.paid,
+      (player) => playerIds.includes(player.id) && !player.paid,
     );
 
     if (!targets.length) {
       return { ok: false, error: "I partecipanti selezionati hanno già saldato." };
     }
 
-    const items: TxItem[] = targets.flatMap((p) =>
-      p.extras.map((e) => ({
-        productId: e.productId,
-        name: e.name,
-        qty: e.qty,
-        price: e.price,
-        cost: e.cost,
+    const quotaTotal = round(
+      targets.reduce((sum, player) => sum + player.quota, 0),
+    );
+
+    const requestedQuota =
+      targets.length === 1 && Number.isFinite(quotaAmount)
+        ? Math.max(0, Math.min(quotaTotal, round(quotaAmount!)))
+        : quotaTotal;
+
+    const unpaidOthers = participants.filter(
+      (player) => !player.paid && !playerIds.includes(player.id),
+    );
+
+    const difference = round(quotaTotal - requestedQuota);
+
+    if (difference > 0 && unpaidOthers.length === 0) {
+      return {
+        ok: false,
+        error: "Non ci sono altri giocatori non pagati a cui redistribuire la differenza.",
+      };
+    }
+
+    const items: TxItem[] = targets.flatMap((player) =>
+      player.extras.map((extra) => ({
+        productId: extra.productId,
+        name: extra.name,
+        qty: extra.qty,
+        price: extra.price,
+        cost: extra.cost,
       })),
     );
 
-    const quotaTotal = round(targets.reduce((sum, p) => sum + p.quota, 0));
-    const extraTotal = round(items.reduce((sum, i) => sum + i.price * i.qty, 0));
-    const amount = round(quotaTotal + extraTotal);
+    const extraTotal = round(
+      items.reduce((sum, item) => sum + item.price * item.qty, 0),
+    );
+    const amount = round(requestedQuota + extraTotal);
 
     if (amount <= 0) {
       return { ok: false, error: "L'importo da pagare deve essere maggiore di zero." };
     }
 
-    if (method === "misto" && (cash < 0 || card < 0 || round(cash + card) !== amount)) {
+    if (
+      method === "misto" &&
+      (cash < 0 || card < 0 || round(cash + card) !== amount)
+    ) {
       return {
         ok: false,
         error: "La somma di contanti e carta deve corrispondere al totale da pagare.",
       };
     }
 
-    const court = db.courts.find((c) => c.id === booking.courtId);
+    const court = db.courts.find((item) => item.id === booking.courtId);
 
     set((d) => {
-      const currentBooking = d.bookings.find((b) => b.id === bookingId);
+      const currentBooking = d.bookings.find((item) => item.id === bookingId);
       if (!currentBooking) return;
 
       const currentParticipants = currentBooking.participants ?? [];
       const currentTargets = currentParticipants.filter(
-        (p) => playerIds.includes(p.id) && !p.paid,
+        (player) => playerIds.includes(player.id) && !player.paid,
       );
 
       if (!currentTargets.length) return;
 
-      const currentItems: TxItem[] = currentTargets.flatMap((p) =>
-        p.extras.map((e) => ({
-          productId: e.productId,
-          name: e.name,
-          qty: e.qty,
-          price: e.price,
-          cost: e.cost,
+      const currentItems: TxItem[] = currentTargets.flatMap((player) =>
+        player.extras.map((extra) => ({
+          productId: extra.productId,
+          name: extra.name,
+          qty: extra.qty,
+          price: extra.price,
+          cost: extra.cost,
         })),
       );
 
       const currentQuota = round(
-        currentTargets.reduce((sum, p) => sum + p.quota, 0),
+        currentTargets.reduce((sum, player) => sum + player.quota, 0),
       );
       const currentExtras = round(
-        currentItems.reduce((sum, i) => sum + i.price * i.qty, 0),
+        currentItems.reduce((sum, item) => sum + item.price * item.qty, 0),
       );
-      const currentAmount = round(currentQuota + currentExtras);
+      const currentRequestedQuota =
+        currentTargets.length === 1 && Number.isFinite(quotaAmount)
+          ? Math.max(0, Math.min(currentQuota, round(quotaAmount!)))
+          : currentQuota;
+      const currentAmount = round(currentRequestedQuota + currentExtras);
+
+      if (currentAmount <= 0) return;
+
+      const currentUnpaidOthers = currentParticipants.filter(
+        (player) => !player.paid && !playerIds.includes(player.id),
+      );
+      const currentDifference = round(currentQuota - currentRequestedQuota);
+
+      if (currentDifference > 0 && !currentUnpaidOthers.length) return;
 
       const op = currentOperator(d);
       const id = nextTxId(d, "campo");
@@ -751,49 +908,74 @@ export const courtSessions = {
         id,
         ts: new Date().toISOString(),
         kind: "campo",
-        label: `${court?.name ?? "Campo"} · ${currentTargets.map((p) => p.name).join(", ")}`,
+        label: `${court?.name ?? "Campo"} · ${currentTargets.map((player) => player.name).join(", ")}`,
         items: currentItems,
         subtotal: currentAmount,
         discount: 0,
         amount: currentAmount,
         method,
-        cash:
-          method === "misto"
-            ? cash
-            : method === "contanti"
-              ? currentAmount
-              : 0,
-        card:
-          method === "misto"
-            ? card
-            : method === "carta"
-              ? currentAmount
-              : 0,
+        cash: method === "misto" ? cash : method === "contanti" ? currentAmount : 0,
+        card: method === "misto" ? card : method === "carta" ? currentAmount : 0,
         operatorId: op.id,
         operatorName: op.name,
         courtId: currentBooking.courtId,
         bookingId,
-        playerName: currentTargets.map((p) => p.name).join(", "),
+        playerName: currentTargets.map((player) => player.name).join(", "),
         note: "Pagamento anticipato quota campo ed extra.",
         cancelled: false,
       };
 
       d.transactions = [tx, ...d.transactions];
 
-      d.bookings = d.bookings.map((b) =>
-        b.id === bookingId
-          ? {
-              ...b,
-              participants: currentParticipants.map((p) =>
-                playerIds.includes(p.id) ? { ...p, paid: true } : p,
-              ),
-            }
-          : b,
+      const totalCents = Math.round(currentDifference * 100);
+      const shareCents = currentUnpaidOthers.length
+        ? Math.floor(totalCents / currentUnpaidOthers.length)
+        : 0;
+      let extraCents = currentUnpaidOthers.length
+        ? totalCents % currentUnpaidOthers.length
+        : 0;
+
+      d.bookings = d.bookings.map((item) =>
+        item.id !== bookingId
+          ? item
+          : {
+              ...item,
+              participants: currentParticipants.map((player) => {
+                if (playerIds.includes(player.id) && !player.paid) {
+                  return {
+                    ...player,
+                    quota:
+                      currentTargets.length === 1
+                        ? currentRequestedQuota
+                        : player.quota,
+                    paid: true,
+                  };
+                }
+
+                if (
+                  currentDifference > 0 &&
+                  currentUnpaidOthers.some((other) => other.id === player.id)
+                ) {
+                  const additionCents =
+                    shareCents + (extraCents > 0 ? 1 : 0);
+
+                  if (extraCents > 0) extraCents -= 1;
+
+                  return {
+                    ...player,
+                    quota: round(player.quota + additionCents / 100),
+                  };
+                }
+
+                return player;
+              }),
+            },
       );
     });
 
     return { ok: true };
   },
+
    
   payPlayers(
     sessionId: string,
