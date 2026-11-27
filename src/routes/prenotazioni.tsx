@@ -136,11 +136,7 @@ function BookingsPage() {
       ) ?? null
     : null;
 
-  const openBooking = (booking: Booking) => {
-    const todayKey = dateKey(new Date());
-
-    // Se la prenotazione ha già una sessione, apre quella esistente.
-    // Vale sia per le sessioni attive sia per quelle concluse.
+    const openBooking = (booking: Booking) => {
     const linkedSession = db.sessions.find(
       (session) => session.bookingId === booking.id,
     );
@@ -151,40 +147,8 @@ function BookingsPage() {
       return;
     }
 
-    const isPastBooking =
-      booking.date < todayKey ||
-      (booking.date === todayKey &&
-        minutesNow() >= toMin(booking.start));
-
-    // Una partita passata senza sessione viene solo consultata:
-    // non deve mai generare un nuovo check-in.
-    if (isPastBooking || booking.kind === "manutenzione") {
-      setOperationalBookingId(null);
-      setDetail(booking.id);
-      return;
-    }
-
-    // Se il campo è già occupato da un'altra sessione,
-    // evita di tentare un secondo check-in.
-    const activeCourtSession = db.sessions.find(
-      (session) =>
-        !session.closed &&
-        session.courtId === booking.courtId,
-    );
-
-    if (activeCourtSession) {
-      setOperationalBookingId(null);
-      setDetail(booking.id);
-      return;
-    }
-
-    try {
-      courtSessions.checkIn(booking);
-      setDetail(null);
-      setOperationalBookingId(booking.id);
-    } catch (error) {
-      toast.error(error instanceof Error ? error.message : "Impossibile avviare la sessione");
-    }
+    setOperationalBookingId(null);
+    setDetail(booking.id);
   };
 
   return (
@@ -482,26 +446,19 @@ function BookingsPage() {
           }
         }}
       />
-
-      <Drawer
-        open={!!pastSlot}
-        onClose={() => setPastSlot(null)}
-        title="Slot passato"
-        subtitle="Consultazione disponibilità"
-        width="w-[400px]"
-      >
-                {pastSlot && (
-          <div className="space-y-4">
-            <Badge tone="neutral">NON PRENOTABILE</Badge>
-            <Panel className="space-y-3 p-4">
-              <Row label="Campo" value={pastSlot.courtName} />
-              <Row label="Data" value={pastSlot.date} />
-              <Row label="Orario" value={`${pastSlot.start} → ${pastSlot.end}`} />
-            </Panel>
-            <p className="text-sm text-muted-foreground">
-              Questo intervallo orario è già trascorso. Puoi consultarlo, ma non è possibile
-              creare una nuova prenotazione per questo slot.
-            </p>
+      <BookingDetail
+        booking={selected}
+        onClose={() => setDetail(null)}
+        onPay={() => {
+          if (!selected) return;
+          setDetail(null);
+          setOperationalBookingId(selected.id);
+        }}
+        canCancel={
+          user?.role === "admin" ||
+          !!user?.permissions.includes("campi")
+        }
+      />
             <Btn variant="outline" className="w-full" onClick={() => setPastSlot(null)}>
               Chiudi
             </Btn>
@@ -511,13 +468,19 @@ function BookingsPage() {
     </div>
   );
 }
-
-function LegendDot({ cls, label }: { cls: string; label: string }) {
-  return (
-    <span className="flex items-center gap-2 text-xs text-muted-foreground">
-      <span className={cn("size-3 rounded-sm", cls)} /> {label}
-    </span>
-  );
+      <SessionDrawer
+        court={operationalCourt}
+        session={operationalSession}
+        booking={operationalBooking}
+        bookingOnly={!!operationalBooking && !operationalSession}
+        upcomingBooking={null}
+        onClose={() => {
+          const bookingId = operationalBooking?.id ?? null;
+          setOperationalBookingId(null);
+          if (bookingId) setDetail(bookingId);
+        }}
+        onStart={() => setOperationalBookingId(null)}
+        onCheckIn={(b) => {
 }
 function BookingForm({
   open,
