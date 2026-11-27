@@ -497,6 +497,19 @@ function BookingsPage() {
       />
 
       {pastSlot && (
+      
+      <SessionDrawer
+        court={historicalCourt}
+        session={historicalSession}
+        booking={historicalBooking}
+        bookingOnly={!!historicalBooking && !historicalSession}
+        displayOnly
+        upcomingBooking={null}
+        onClose={() => setHistoricalBookingId(null)}
+        onStart={() => {}}
+        onCheckIn={() => {}}
+      />
+
         <Modal
           open
           onClose={() => setPastSlot(null)}
