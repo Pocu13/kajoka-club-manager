@@ -1369,8 +1369,8 @@ function BookingDetail({
         subtitle={`${court?.name ?? "Campo"} · ${booking.start} → ${booking.end}`}
         footer={
           !booking.cancelled ? (
-            <div className="grid grid-cols-2 gap-2">
-                           {editing ? (
+                       <div className="flex gap-2">
+              {editing ? (
                 <>
                   <Btn
                     variant="outline"
@@ -1391,8 +1391,7 @@ function BookingDetail({
                   <Pencil className="size-4" /> Modifica
                 </Btn>
               )}
-          ) : null
-        }
+            </div>
       >
         <div className="space-y-4">
           <Panel className="space-y-2 p-4">
