@@ -929,6 +929,8 @@ const fixedBookingParticipants = court.type === "padel" && !displayOnly;
                           );
                           setClosedTotal(String(session.total));
                           setEditingClosedDetails(true);
+                          setClosedPaymentMethod("carta");
+setClosedPaymentCash("0");
                         }
                       }}
                     >
