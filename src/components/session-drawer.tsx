@@ -386,7 +386,7 @@ const fixedBookingParticipants = court.type === "padel" && !displayOnly;
     });
   };
 
-  const saveClosedSession = () => {
+    const saveClosedSession = () => {
     if (!canEditClosedDetails || !editingClosedDetails || !session?.closed) {
       return;
     }
@@ -398,12 +398,17 @@ const fixedBookingParticipants = court.type === "padel" && !displayOnly;
       return;
     }
 
-    for (const item of closedPlayers) {
-      if (!item.name.trim()) {
-        toast.error("Inserisci il nome di tutti i giocatori.");
-        return;
-      }
+    const playersToSave = closedPlayers
+      .filter((item) => item.name.trim())
+      .map((item) => ({
+        id: item.id,
+        name: item.name.trim(),
+        quota: item.quota,
+        paid: item.paid,
+        extras: item.extras,
+      }));
 
+    for (const item of playersToSave) {
       if (!Number.isFinite(item.quota) || item.quota < 0) {
         toast.error(`Controlla la quota di ${item.name}.`);
         return;
@@ -422,15 +427,13 @@ const fixedBookingParticipants = court.type === "padel" && !displayOnly;
       }
     }
 
+    const paymentCash = Number(closedPaymentCash.replace(",", ".")) || 0;
+
     const result = courtSessions.updateClosedDetails(session.id, {
       total: Math.round(total * 100) / 100,
-      players: closedPlayers.map((item) => ({
-        id: item.id,
-        name: item.name.trim(),
-        quota: item.quota,
-        paid: item.paid,
-        extras: item.extras,
-      })),
+      paymentMethod: closedPaymentMethod,
+      paymentCash,
+      players: playersToSave,
     });
 
     if (!result.ok) {
