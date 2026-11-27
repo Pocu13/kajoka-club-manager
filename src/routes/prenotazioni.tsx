@@ -1367,9 +1367,9 @@ function BookingDetail({
         onClose={onClose}
         title={booking.title}
         subtitle={`${court?.name ?? "Campo"} · ${booking.start} → ${booking.end}`}
-        footer={
+                footer={
           !booking.cancelled ? (
-                       <div className="flex gap-2">
+            <div className="flex gap-2">
               {editing ? (
                 <>
                   <Btn
@@ -1378,6 +1378,7 @@ function BookingDetail({
                   >
                     Annulla modifiche
                   </Btn>
+
                   <Btn variant="primary" onClick={saveEdit}>
                     Salva modifiche
                   </Btn>
@@ -1392,6 +1393,8 @@ function BookingDetail({
                 </Btn>
               )}
             </div>
+          ) : null
+        }
       >
         <div className="space-y-4">
           <Panel className="space-y-2 p-4">
