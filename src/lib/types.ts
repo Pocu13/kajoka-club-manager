@@ -85,11 +85,17 @@ export interface Transaction {
   courtId?: string | undefined;
   sessionId?: string | undefined;
   bookingId?: string | undefined;
-  playerName?: string | undefined;
-    playerIds?: string[] | undefined;
+   playerName?: string | undefined;
+  playerIds?: string[] | undefined;
+  playerPayments?: Array<{
+    playerId: string;
+    playerName: string;
+    quota: number;
+    extras: TxItem[];
+    amount: number;
+  }> | undefined;
   adjustmentOf?: string | undefined;
   adjustmentType?: "storno" | "integrazione" | undefined;
-  note: string;
   cancelled: boolean;
   cancelledAt?: string | undefined;
   cancelReason?: string | undefined;
