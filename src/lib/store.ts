@@ -1274,107 +1274,136 @@ export const courtSessions = {
    * Le quote e i nomi dei giocatori pagati restano invariati.
    * Le transazioni e i movimenti contabili non vengono toccati.
    */
-    updateClosedDetails(
-    sessionId: string,
-    input: {
-      total: number;
-      players: Array<{
-        id: string;
-        name: string;
-        quota: number;
-      }>;
-    },
-  ): { ok: boolean; error?: string } {
-    const db = getDB();
-    const session = db.sessions.find((item) => item.id === sessionId);
+      updateClosedDetails(
+      sessionId: string,
+      input: {
+        total: number;
+        players: Array<{
+          id: string;
+          name: string;
+          quota: number;
+          paid: boolean;
+          extras: Player["extras"];
+        }>;
+      },
+    ): { ok: boolean; error?: string } {
+      const db = getDB();
+      const session = db.sessions.find((item) => item.id === sessionId);
 
-    if (!session) {
-      return { ok: false, error: "Partita non trovata." };
-    }
-
-    if (!session.closed) {
-      return {
-        ok: false,
-        error: "Puoi modificare da qui soltanto una partita conclusa.",
-      };
-    }
-
-    if (!Number.isFinite(input.total) || input.total < 0) {
-      return { ok: false, error: "Il prezzo totale non è valido." };
-    }
-
-    if (!Array.isArray(input.players)) {
-      return { ok: false, error: "Elenco giocatori non valido." };
-    }
-
-    const submittedIds = new Set<string>();
-
-    for (const item of input.players) {
-      if (!item || typeof item.id !== "string" || !item.id) {
-        return { ok: false, error: "Un giocatore non è valido." };
+      if (!session) {
+        return { ok: false, error: "Partita non trovata." };
       }
 
-      if (submittedIds.has(item.id)) {
-        return { ok: false, error: "Un giocatore è presente più di una volta." };
+      if (!session.closed) {
+        return {
+          ok: false,
+          error: "Puoi modificare da qui soltanto una partita conclusa.",
+        };
       }
 
-      submittedIds.add(item.id);
-
-      const existingPlayer = session.players.find(
-        (player) => player.id === item.id,
-      );
-
-      if (!existingPlayer) {
-        return { ok: false, error: "Uno dei giocatori non appartiene a questa partita." };
+      if (!Number.isFinite(input.total) || input.total < 0) {
+        return { ok: false, error: "Il prezzo totale non è valido." };
       }
 
-      if (existingPlayer.paid) {
-        continue;
+      if (!Array.isArray(input.players)) {
+        return { ok: false, error: "Elenco giocatori non valido." };
       }
 
-      if (typeof item.name !== "string") {
-        return { ok: false, error: "Il nome di un giocatore non è valido." };
-      }
+      const submittedIds = new Set<string>();
 
-      if (!Number.isFinite(item.quota) || item.quota < 0) {
-        return { ok: false, error: "Una delle quote non è valida." };
-      }
-    }
-
-    set((d) => {
-      d.sessions = d.sessions.map((current) => {
-        if (current.id !== sessionId || !current.closed) {
-          return current;
+      for (const item of input.players) {
+        if (!item || typeof item.id !== "string" || !item.id) {
+          return { ok: false, error: "Un giocatore non è valido." };
         }
 
-        return {
-          ...current,
-          total: round(input.total),
-          players: current.players.map((player) => {
-            if (player.paid) {
-              return player;
-            }
+        if (submittedIds.has(item.id)) {
+          return {
+            ok: false,
+            error: "Un giocatore è presente più di una volta.",
+          };
+        }
 
-            const updated = input.players.find(
-              (item) => item.id === player.id,
-            );
+        submittedIds.add(item.id);
 
-            if (!updated) {
-              return player;
-            }
+        const existingPlayer = session.players.find(
+          (player) => player.id === item.id,
+        );
 
-            return {
-              ...player,
-              name: updated.name,
-              quota: round(updated.quota),
-            };
-          }),
-        };
+        if (!existingPlayer) {
+          return {
+            ok: false,
+            error: "Uno dei giocatori non appartiene a questa partita.",
+          };
+        }
+
+        if (typeof item.name !== "string") {
+          return { ok: false, error: "Il nome di un giocatore non è valido." };
+        }
+
+        if (!Number.isFinite(item.quota) || item.quota < 0) {
+          return { ok: false, error: "Una delle quote non è valida." };
+        }
+
+        if (typeof item.paid !== "boolean") {
+          return {
+            ok: false,
+            error: "Lo stato del pagamento non è valido.",
+          };
+        }
+
+        if (!Array.isArray(item.extras)) {
+          return { ok: false, error: "Gli extra di un giocatore non sono validi." };
+        }
+
+        for (const extra of item.extras) {
+          if (
+            !extra ||
+            typeof extra.productId !== "string" ||
+            typeof extra.name !== "string" ||
+            !Number.isFinite(extra.qty) ||
+            extra.qty <= 0 ||
+            !Number.isFinite(extra.price) ||
+            extra.price < 0 ||
+            !Number.isFinite(extra.cost) ||
+            extra.cost < 0
+          ) {
+            return { ok: false, error: "Uno degli extra non è valido." };
+          }
+        }
+      }
+
+      set((d) => {
+        d.sessions = d.sessions.map((current) => {
+          if (current.id !== sessionId || !current.closed) {
+            return current;
+          }
+
+          return {
+            ...current,
+            total: round(input.total),
+            players: current.players.map((player) => {
+              const updated = input.players.find(
+                (item) => item.id === player.id,
+              );
+
+              if (!updated) {
+                return player;
+              }
+
+              return {
+                ...player,
+                name: updated.name,
+                quota: round(updated.quota),
+                paid: updated.paid,
+                extras: updated.extras.map((extra) => ({ ...extra })),
+              };
+            }),
+          };
+        });
       });
-    });
 
-    return { ok: true };
-  },
+      return { ok: true };
+    },
 };
 /* ---------------------------------- users --------------------------------- */
 
