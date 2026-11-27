@@ -1177,6 +1177,7 @@ export const courtSessions = {
           sessionId: session.id,
           bookingId: session.bookingId,
           playerName: targets.map((target) => target.name).join(", "),
+          playerIds: targets.map((target) => target.id),
           note: "Saldo quota campo ed extra. La quota campo può essere redistribuita tra i giocatori non ancora saldati.",
           cancelled: false,
         },
