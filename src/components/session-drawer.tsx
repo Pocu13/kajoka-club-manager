@@ -156,10 +156,31 @@ export function SessionDrawer({
       p.extras.reduce((sum, e) => sum + e.price * e.qty, 0)
     );
   };
+  const payQuotaBase = payIds.reduce((sum, id) => {
+    const p = session?.players.find((player) => player.id === id);
+    return sum + (p?.quota ?? 0);
+  }, 0);
 
-  const payTotal = payIds.reduce(
-    (sum, id) => sum + playerTotal(id),
-    0,
+  const payExtrasTotal = payIds.reduce((sum, id) => {
+    const p = session?.players.find((player) => player.id === id);
+    return (
+      sum +
+      (p?.extras.reduce(
+        (extraSum, extra) => extraSum + extra.price * extra.qty,
+        0,
+      ) ?? 0)
+    );
+  }, 0);
+
+  const parsedPayQuota = Number(payQuotaAmount.replace(",", "."));
+  const payQuotaTotal =
+    payIds.length === 1 &&
+    Number.isFinite(parsedPayQuota) &&
+    parsedPayQuota >= 0
+      ? parsedPayQuota
+      : payQuotaBase;
+
+  const payTotal = payQuotaTotal + payExtrasTotal;
   );
 
   const collected = session
