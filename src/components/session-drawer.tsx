@@ -1045,6 +1045,7 @@ export function SessionDrawer({
                             onClick={(event) => {
                               event.stopPropagation();
                               setPayIds([p.id]);
+                              setPayQuotaAmount(String(p.quota));
                               setMethod("carta");
                               setCash("0");
                               setPayOpen(true);
