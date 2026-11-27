@@ -25,7 +25,7 @@ import {
   useDB,
 } from "@/lib/store";
 import { sessionSummary } from "@/lib/whatsapp";
-import { eur, fmtTime, toMin } from "@/lib/format";
+import { eur, fmtTime } from "@/lib/format";
 import type { Booking, Court, Player, Session } from "@/lib/types";
 import { cn } from "@/lib/utils";
 
@@ -58,9 +58,12 @@ export function SessionDrawer({
           startedAt: new Date(
             `${booking.date}T${booking.start}:00`,
           ).toISOString(),
-          durationMin: Math.max(
+                 durationMin: Math.max(
             30,
-            toMin(booking.end) - toMin(booking.start),
+            (Number(booking.end.slice(0, 2)) * 60 +
+              Number(booking.end.slice(3, 5))) -
+              (Number(booking.start.slice(0, 2)) * 60 +
+                Number(booking.start.slice(3, 5))),
           ),
           pricingMode: "campo",
           total: booking.price,
