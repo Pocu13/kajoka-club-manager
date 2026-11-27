@@ -52,8 +52,9 @@ export function SessionDrawer({
   const [selPlayer, setSelPlayer] = useState<string | null>(null);
   const [payOpen, setPayOpen] = useState(false);
   const [payIds, setPayIds] = useState<string[]>([]);
-  const [method, setMethod] = useState<"contanti" | "carta" | "misto">("carta");
+    const [method, setMethod] = useState<"contanti" | "carta" | "misto">("carta");
   const [cash, setCash] = useState("0");
+  const [payQuotaAmount, setPayQuotaAmount] = useState("0");
   const [editQuotas, setEditQuotas] = useState(false);
   const [quotaDraft, setQuotaDraft] = useState<Record<string, string>>({});
 
