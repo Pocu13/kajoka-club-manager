@@ -1591,6 +1591,7 @@ for (const player of updatedPlayers) {
         }
       }
 
+     
       const originalSplit = originalCash + originalCard;
 
       let cashDelta = 0;
@@ -1609,12 +1610,19 @@ for (const player of updatedPlayers) {
           };
         }
 
-        const requestedCash =
-          input.paymentMethod === "contanti"
-            ? deltaAmount
-            : input.paymentMethod === "carta"
-              ? 0
-              : round(input.paymentCash);
+        let requestedCash = 0;
+
+        if (input.paymentMethod === "contanti") {
+          requestedCash = deltaAmount;
+        } else if (input.paymentMethod === "misto") {
+          requestedCash = Math.min(
+            remainingCashForNewPayments,
+            deltaAmount,
+          );
+          remainingCashForNewPayments = round(
+            remainingCashForNewPayments - requestedCash,
+          );
+        }
 
         if (
           !Number.isFinite(requestedCash) ||
@@ -1630,6 +1638,7 @@ for (const player of updatedPlayers) {
         cashDelta = round(requestedCash);
         cardDelta = round(deltaAmount - cashDelta);
       }
+
 
       const method: PaymentMethod =
         Math.abs(cashDelta) > 0.005 &&
