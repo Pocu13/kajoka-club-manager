@@ -1449,33 +1449,7 @@ function BookingDetail({
               ))}
             </div>
 
-            <p className="mt-2 text-xs text-muted-foreground">
-              {court?.type === "padel"
-                ? "Padel: 4 partecipanti obbligatori."
-                : court?.type === "beach"
-                  ? "Beach: da 2 a 12 partecipanti."
-                  : "Tennis: da 2 a 4 partecipanti."}{" "}
-              Le quote sono modificabili singolarmente e
-              non cambiano quando aggiungi o rimuovi
-              partecipanti. I giocatori già pagati restano bloccati.
-            </p>
-
-            {!booking.cancelled && (
-              <Btn
-                variant="primary"
-                size="sm"
-                className="mt-2 w-full"
-                onClick={() => {
-                  if (saveParticipants()) {
-                    toast.success(
-                      "Prezzo, partecipanti e quote salvati",
-                    );
-                  }
-                }}
-              >
-                Salva prezzo e quote
-              </Btn>
-            )}
+            
           </div>
 
           {booking.extras.length > 0 && (
