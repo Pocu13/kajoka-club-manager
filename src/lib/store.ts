@@ -796,33 +796,60 @@ export const courtSessions = {
   },
 
   payPlayers(
+   
+  payPlayers(
     sessionId: string,
     playerIds: string[],
     method: PaymentMethod,
     cash: number,
     card: number,
+    quotaAmount?: number,
   ) {
     set((d) => {
-      const s = d.sessions.find((x) => x.id === sessionId);
-      if (!s) return;
+      const session = d.sessions.find((item) => item.id === sessionId);
+      if (!session) return;
 
-      const court = d.courts.find((c) => c.id === s.courtId);
-      const targets = s.players.filter((p) => playerIds.includes(p.id) && !p.paid);
+      const court = d.courts.find((item) => item.id === session.courtId);
+      const targets = session.players.filter(
+        (player) => playerIds.includes(player.id) && !player.paid,
+      );
       if (!targets.length) return;
 
-      const items: TxItem[] = targets.flatMap((p) =>
-        p.extras.map((e) => ({
-          productId: e.productId,
-          name: e.name,
-          qty: e.qty,
-          price: e.price,
-          cost: e.cost,
+      const currentQuotaTotal = round(
+        targets.reduce((sum, player) => sum + player.quota, 0),
+      );
+
+      // L'importo personalizzato è previsto per il saldo di un singolo giocatore.
+      // Gli incassi cumulativi mantengono le quote complete selezionate.
+      const requestedQuota =
+        targets.length === 1 && Number.isFinite(quotaAmount)
+          ? Math.max(0, Math.min(currentQuotaTotal, round(quotaAmount!)))
+          : currentQuotaTotal;
+
+      const unpaidOthers = session.players.filter(
+        (player) => !player.paid && !playerIds.includes(player.id),
+      );
+
+      const difference = round(currentQuotaTotal - requestedQuota);
+
+      // Non consentire un pagamento parziale se non ci sono altri giocatori
+      // non saldati a cui redistribuire la differenza.
+      if (difference > 0 && unpaidOthers.length === 0) return;
+
+      const items: TxItem[] = targets.flatMap((player) =>
+        player.extras.map((extra) => ({
+          productId: extra.productId,
+          name: extra.name,
+          qty: extra.qty,
+          price: extra.price,
+          cost: extra.cost,
         })),
       );
 
-      const quotaTotal = round(targets.reduce((sum, p) => sum + p.quota, 0));
-      const extraTotal = round(items.reduce((sum, i) => sum + i.price * i.qty, 0));
-      const amount = round(quotaTotal + extraTotal);
+      const extraTotal = round(
+        items.reduce((sum, item) => sum + item.price * item.qty, 0),
+      );
+      const amount = round(requestedQuota + extraTotal);
       const op = currentOperator(d);
       const id = nextTxId(d, "campo");
 
@@ -831,7 +858,7 @@ export const courtSessions = {
           id,
           ts: new Date().toISOString(),
           kind: "campo",
-          label: `${court?.name ?? "Campo"} · ${targets.map((t) => t.name).join(", ")}`,
+          label: `${court?.name ?? "Campo"} · ${targets.map((target) => target.name).join(", ")}`,
           items,
           subtotal: amount,
           discount: 0,
@@ -841,26 +868,60 @@ export const courtSessions = {
           card: method === "misto" ? card : method === "carta" ? amount : 0,
           operatorId: op.id,
           operatorName: op.name,
-          courtId: s.courtId,
-          sessionId: s.id,
-          bookingId: s.bookingId,
-          playerName: targets.map((t) => t.name).join(", "),
-          note: "Saldo quota campo ed extra.",
+          courtId: session.courtId,
+          sessionId: session.id,
+          bookingId: session.bookingId,
+          playerName: targets.map((target) => target.name).join(", "),
+          note: "Saldo quota campo ed extra. La quota campo può essere redistribuita tra i giocatori non ancora saldati.",
           cancelled: false,
         },
         ...d.transactions,
       ];
 
-      d.sessions = d.sessions.map((x) =>
-        x.id === sessionId
-          ? {
-              ...x,
-              players: x.players.map((p) =>
-                playerIds.includes(p.id) ? { ...p, paid: true } : p,
-              ),
+      d.sessions = d.sessions.map((item) => {
+        if (item.id !== sessionId) return item;
+
+        const totalCents = Math.round(difference * 100);
+        const shareCents =
+          unpaidOthers.length > 0
+            ? Math.floor(totalCents / unpaidOthers.length)
+            : 0;
+        let extraCents =
+          unpaidOthers.length > 0
+            ? totalCents % unpaidOthers.length
+            : 0;
+
+        return {
+          ...item,
+          players: item.players.map((player) => {
+            if (playerIds.includes(player.id) && !player.paid) {
+              return {
+                ...player,
+                quota: targets.length === 1 ? requestedQuota : player.quota,
+                paid: true,
+              };
             }
-          : x,
-      );
+
+            if (
+              difference > 0 &&
+              !player.paid &&
+              unpaidOthers.some((other) => other.id === player.id)
+            ) {
+              const additionCents =
+                shareCents + (extraCents > 0 ? 1 : 0);
+
+              if (extraCents > 0) extraCents -= 1;
+
+              return {
+                ...player,
+                quota: round(player.quota + additionCents / 100),
+              };
+            }
+
+            return player;
+          }),
+        };
+      });
     });
   },
 
