@@ -522,6 +522,18 @@ export function SessionDrawer({
           )
         }
       >
+                {booking &&
+          canPayBooking &&
+          onToggleBookingOnly && (
+            <Panel className="p-3">
+              <Toggle
+                checked={bookingOnly}
+                onChange={onToggleBookingOnly}
+                label="PAGA"
+                hint="Attiva o disattiva la scheda operativa della prenotazione."
+              />
+            </Panel>
+          )}
         {!session ? (
           <div className="space-y-4">
             {booking && (
