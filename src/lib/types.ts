@@ -86,6 +86,9 @@ export interface Transaction {
   sessionId?: string | undefined;
   bookingId?: string | undefined;
   playerName?: string | undefined;
+    playerIds?: string[] | undefined;
+  adjustmentOf?: string | undefined;
+  adjustmentType?: "storno" | "integrazione" | undefined;
   note: string;
   cancelled: boolean;
   cancelledAt?: string | undefined;
