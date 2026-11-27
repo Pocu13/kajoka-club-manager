@@ -1320,19 +1320,10 @@ function BookingDetail({
               label="Orario"
               value={`${booking.start} → ${booking.end}`}
             />
-
-            <Field label="Prezzo totale prenotazione (€)">
-              <Input
-                type="number"
-                min="0"
-                step="0.01"
-                value={bookingPriceValue}
-                disabled={booking.cancelled}
-                onChange={(event) =>
-                  setBookingPriceValue(event.target.value)
-                }
-              />
-            </Field>
+            <Row
+              label="Prezzo totale prenotazione"
+              value={`${Number(bookingPriceValue).toFixed(2)} €`}
+            />
 
             <Row
               label="Creata da"
