@@ -646,15 +646,16 @@ const fixedBookingParticipants = court.type === "padel" && !displayOnly;
                     Modifica prenotazione
                   </div>
 
-                  <Input
-  type="number"
-  min="0"
-  step="0.01"
-  value={bookingPrice}
-  disabled={displayOnly && !editingHistoricalBooking}
-  onChange={(event) => setBookingPrice(event.target.value)}
-/>
-                  </Field>
+               <Field label="Prezzo totale prenotazione (€)">
+  <Input
+    type="number"
+    min="0"
+    step="0.01"
+    value={bookingPrice}
+    disabled={displayOnly && !editingHistoricalBooking}
+    onChange={(event) => setBookingPrice(event.target.value)}
+  />
+</Field>
 
                   <div>
                     <div className="mb-2 flex items-center justify-between gap-2">
