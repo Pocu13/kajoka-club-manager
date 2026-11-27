@@ -145,7 +145,50 @@ const round = (n: number) => Math.round(n * 100) / 100;
 const roundUpHalf = (value: number) =>
   Math.ceil((Math.max(0, value) - 0.000001) * 2) / 2;
 
-function redistributeOneQuota(players: Player[], requested: Record<string, number>): Player[] {
+function distributeHalfEuroTotal(
+  players: Player[],
+  targetTotal: number,
+  excludedIds: Set<string> = new Set(),
+): Player[] {
+  const eligible = players.filter((player) => !player.paid && !excludedIds.has(player.id));
+  if (!eligible.length) return players;
+  const halfUnits = Math.max(0, Math.round(roundUpHalf(targetTotal) * 2));
+  const baseUnits = Math.floor(halfUnits / eligible.length);
+  const remainder = halfUnits % eligible.length;
+  const quotas = new Map(eligible.map((player, index) => [
+    player.id,
+    (baseUnits + (index < remainder ? 1 : 0)) / 2,
+  ]));
+  return players.map((player) =>
+    quotas.has(player.id) ? { ...player, quota: quotas.get(player.id)! } : player,
+  );
+}
+
+function addHalfEuroDifference(
+  players: Player[],
+  excludedIds: Set<string>,
+  difference: number,
+): Player[] {
+  const eligible = players.filter((player) => !player.paid && !excludedIds.has(player.id));
+  if (!eligible.length || difference <= 0) return players;
+  const halfUnits = Math.max(0, Math.round(roundUpHalf(difference) * 2));
+  const baseUnits = Math.floor(halfUnits / eligible.length);
+  const remainder = halfUnits % eligible.length;
+  const increments = new Map(eligible.map((player, index) => [
+    player.id,
+    (baseUnits + (index < remainder ? 1 : 0)) / 2,
+  ]));
+  return players.map((player) =>
+    increments.has(player.id)
+      ? { ...player, quota: roundUpHalf(player.quota + increments.get(player.id)!) }
+      : player,
+  );
+}
+
+function redistributeOneQuota(
+  players: Player[],
+  requested: Record<string, number>,
+): Player[] {
   const selected = players.find(
     (player) =>
       !player.paid &&
@@ -153,23 +196,15 @@ function redistributeOneQuota(players: Player[], requested: Record<string, numbe
       Math.abs((Number(requested[player.id]) || 0) - player.quota) > 0.001,
   );
   if (!selected) return players;
-
   const selectedQuota = roundUpHalf(Number(requested[selected.id]) || 0);
   const paidTotal = players.filter((player) => player.paid).reduce((sum, player) => sum + player.quota, 0);
-  const otherUnpaid = players.filter((player) => !player.paid && player.id !== selected.id);
   const totalBefore = players.reduce((sum, player) => sum + player.quota, 0);
   const remaining = Math.max(0, totalBefore - paidTotal - selectedQuota);
-  const otherQuota = otherUnpaid.length ? roundUpHalf(remaining / otherUnpaid.length) : 0;
-
-  return players.map((player) => {
-    if (player.id === selected.id) return { ...player, quota: selectedQuota };
-    if (!player.paid && otherUnpaid.some((other) => other.id === player.id)) {
-      return { ...player, quota: otherQuota };
-    }
-    return player;
-  });
+  const withSelected = players.map((player) =>
+    player.id === selected.id ? { ...player, quota: selectedQuota } : player,
+  );
+  return distributeHalfEuroTotal(withSelected, remaining, new Set([selected.id]));
 }
-
 function currentOperator(db: DB): { id: string; name: string } {
   const u = db.users.find((x) => x.id === db.currentUserId);
   return { id: u?.id ?? "system", name: u?.name ?? "Sistema" };
@@ -388,6 +423,7 @@ export const sales = {
       const subtotal = round(
         input.items.reduce((s, i) => s + i.price * i.qty, 0),
       );
+            );
 
       const discount = isGift ? subtotal : input.discount;
       const amount = isGift ? 0 : round(subtotal - discount);
@@ -817,6 +853,12 @@ export const courtSessions = {
                           price: currentProduct.price,
                           cost: currentProduct.cost,
                         },
+                                                productId: currentProduct.id,
+                          name: currentProduct.name,
+                          qty: 1,
+                          price: currentProduct.price,
+                          cost: currentProduct.cost,
+                        },
                       ],
                 };
               }),
@@ -1038,22 +1080,21 @@ export const courtSessions = {
 
       d.bookings = d.bookings.map((item) => {
         if (item.id !== bookingId) return item;
-        const redistributedQuota = currentUnpaidOthers.length
-          ? roundUpHalf(currentDifference / currentUnpaidOthers.length)
-          : 0;
-        const updatedParticipants = currentParticipants.map((player) => {
-          if (playerIds.includes(player.id) && !player.paid) {
-            return {
-              ...player,
-              quota: currentTargets.length === 1 ? currentRequestedQuota : player.quota,
-              paid: true,
-            };
-          }
-          if (currentDifference > 0 && currentUnpaidOthers.some((other) => other.id === player.id)) {
-            return { ...player, quota: roundUpHalf(player.quota + redistributedQuota) };
-          }
-          return player;
-        });
+        const paidIds = new Set(currentTargets.map((player) => player.id));
+        const paidParticipants = currentParticipants.map((player) =>
+          paidIds.has(player.id) && !player.paid
+            ? {
+                ...player,
+                quota: currentTargets.length === 1 ? currentRequestedQuota : player.quota,
+                paid: true,
+              }
+            : player,
+        );
+        const updatedParticipants = addHalfEuroDifference(
+          paidParticipants,
+          paidIds,
+          currentDifference,
+        );
         return {
           ...item,
           participants: updatedParticipants,
@@ -1150,22 +1191,21 @@ export const courtSessions = {
 
       d.sessions = d.sessions.map((item) => {
         if (item.id !== sessionId) return item;
-        const redistributedQuota = unpaidOthers.length
-          ? roundUpHalf(difference / unpaidOthers.length)
-          : 0;
-        const updatedPlayers = item.players.map((player) => {
-          if (playerIds.includes(player.id) && !player.paid) {
-            return {
-              ...player,
-              quota: targets.length === 1 ? requestedQuota : player.quota,
-              paid: true,
-            };
-          }
-          if (difference > 0 && !player.paid && unpaidOthers.some((other) => other.id === player.id)) {
-            return { ...player, quota: roundUpHalf(player.quota + redistributedQuota) };
-          }
-          return player;
-        });
+        const paidIds = new Set(targets.map((player) => player.id));
+        const paidPlayers = item.players.map((player) =>
+          paidIds.has(player.id) && !player.paid
+            ? {
+                ...player,
+                quota: targets.length === 1 ? requestedQuota : player.quota,
+                paid: true,
+              }
+            : player,
+        );
+        const updatedPlayers = addHalfEuroDifference(
+          paidPlayers,
+          paidIds,
+          difference,
+        );
         return {
           ...item,
           players: updatedPlayers,
@@ -1230,7 +1270,7 @@ export const courtSessions = {
       );
 
       d.sessions = d.sessions.filter(
-        (item) => item.id !== currentSession.id,
+                (item) => item.id !== currentSession.id,
       );
     });
 
@@ -1241,7 +1281,7 @@ export const courtSessions = {
    * Le quote e i nomi dei giocatori pagati restano invariati.
    * Le transazioni e i movimenti contabili non vengono toccati.
    */
-  updateClosedDetails(
+    updateClosedDetails(
     sessionId: string,
     input: {
       total: number;
