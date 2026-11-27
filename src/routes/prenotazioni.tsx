@@ -443,16 +443,27 @@ function BookingsPage() {
         initial={form}
       />
 
-      <BookingDetail
+            <BookingDetail
         booking={selected}
         onClose={() => setDetail(null)}
-        canCancel={user?.role === "admin" || !!user?.permissions.includes("campi")}
-        canPrepay={
-          !!selected &&
-          selected.kind === "partita" &&
-          !selected.cancelled &&
-          (selected.date > dateKey(new Date()) ||
-            (selected.date === dateKey(new Date()) && minutesNow() < toMin(selected.start)))
+        onActivate={() => {
+          if (!selected) return;
+
+          try {
+            courtSessions.checkIn(selected);
+            setDetail(null);
+            setOperationalBookingId(selected.id);
+          } catch (error) {
+            toast.error(
+              error instanceof Error
+                ? error.message
+                : "Impossibile avviare la sessione",
+            );
+          }
+        }}
+        canCancel={
+          user?.role === "admin" ||
+          !!user?.permissions.includes("campi")
         }
       />
 
@@ -826,13 +837,13 @@ function Row({ label, value }: { label: string; value: string }) {
 function BookingDetail({
   booking,
   onClose,
+  onActivate,
   canCancel,
-  canPrepay,
 }: {
   booking: Booking | null;
   onClose: () => void;
+  onActivate: () => void;
   canCancel: boolean;
-  canPrepay: boolean;
 }) {
   const db = useDB();
   const [confirm, setConfirm] = useState(false);
