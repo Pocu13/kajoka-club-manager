@@ -18,6 +18,7 @@ import {
   Modal,
   Panel,
   Select,
+  Toggle,
 } from "@/components/ui-kit";
 import {
   courtSessions,
@@ -34,6 +35,8 @@ type SessionDrawerProps = {
   session: Session | null;
   booking: Booking | null;
   bookingOnly?: boolean;
+  canPayBooking?: boolean;
+  onToggleBookingOnly?: (enabled: boolean) => void;
   upcomingBooking: Booking | null;
   onClose: () => void;
   onStart: () => void;
@@ -45,6 +48,8 @@ export function SessionDrawer({
   session: sourceSession,
   booking,
   bookingOnly = false,
+  canPayBooking = false,
+  onToggleBookingOnly,
   upcomingBooking,
   onClose,
   onStart,
