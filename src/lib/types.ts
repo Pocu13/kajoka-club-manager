@@ -85,7 +85,7 @@ export interface Transaction {
   courtId?: string | undefined;
   sessionId?: string | undefined;
   bookingId?: string | undefined;
-   playerName?: string | undefined;
+  playerName?: string | undefined;
   playerIds?: string[] | undefined;
   playerPayments?: Array<{
     playerId: string;
@@ -95,6 +95,7 @@ export interface Transaction {
     amount: number;
   }> | undefined;
   adjustmentOf?: string | undefined;
+  adjustmentOperationId?: string | undefined;
   adjustmentType?: "storno" | "integrazione" | undefined;
   cancelled: boolean;
   cancelledAt?: string | undefined;
