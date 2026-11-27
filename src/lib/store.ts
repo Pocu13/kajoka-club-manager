@@ -1480,9 +1480,10 @@ export const courtSessions = {
     }
 
     const adjustments: Transaction[] = [];
-    const operator = currentOperator(db);
+const operator = currentOperator(db);
+let remainingCashForNewPayments = round(input.paymentCash);
 
-    for (const player of updatedPlayers) {
+for (const player of updatedPlayers) {
       const entries = linkedTransactions.flatMap(
         (tx) =>
           (tx.playerPayments ?? []).filter(
