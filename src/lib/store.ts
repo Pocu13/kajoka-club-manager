@@ -654,7 +654,46 @@ export const courtSessions = {
     });
   },
 
-  
+   /**
+   * Inizializza i partecipanti direttamente nella prenotazione.
+   * Non crea sessioni e non occupa il campo.
+   */
+  ensureBookingParticipants(bookingId: string): Player[] {
+    const db = getDB();
+    const booking = db.bookings.find((item) => item.id === bookingId);
+
+    if (!booking) return [];
+
+    if (booking.participants?.length) {
+      return booking.participants;
+    }
+
+    const court = db.courts.find((item) => item.id === booking.courtId);
+    const minutes = Math.max(30, toMin(booking.end) - toMin(booking.start));
+    const total =
+      booking.price > 0
+        ? booking.price
+        : round((court?.hourlyPrice ?? 0) * (minutes / 60));
+
+    const participants = createBookingParticipants(booking, total);
+
+    set((d) => {
+      d.bookings = d.bookings.map((item) =>
+        item.id === bookingId && !item.participants?.length
+          ? {
+              ...item,
+              participants,
+              players: participants.map((player) => player.name),
+            }
+          : item,
+      );
+    });
+
+    return (
+      getDB().bookings.find((item) => item.id === bookingId)?.participants ??
+      participants
+    );
+  }, 
   /**
    * Gestione operativa anticipata direttamente sulla prenotazione.
    * Non crea sessioni e non occupa il campo.
