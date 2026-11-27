@@ -129,14 +129,13 @@ function BookingsPage() {
     ? db.courts.find((c) => c.id === operationalBooking.courtId) ?? null
     : null;
 
-  // Recupera la sessione collegata alla prenotazione anche se è conclusa.
   const operationalSession = operationalBooking
     ? db.sessions.find(
         (session) => session.bookingId === operationalBooking.id,
       ) ?? null
     : null;
 
-    const openBooking = (booking: Booking) => {
+  const openBooking = (booking: Booking) => {
     const linkedSession = db.sessions.find(
       (session) => session.bookingId === booking.id,
     );
@@ -245,7 +244,7 @@ function BookingsPage() {
 
       <Panel className="flex flex-wrap items-center gap-x-5 gap-y-2 px-4 py-3">
         <span className="label-caps text-muted-foreground">Legenda stati:</span>
-                <span className="inline-flex items-center gap-2 text-xs text-muted-foreground">
+        <span className="inline-flex items-center gap-2 text-xs text-muted-foreground">
           <span className="size-2.5 rounded-full bg-[#8bc34a]" />
           Libero / Disponibile
         </span>
@@ -422,7 +421,7 @@ function BookingsPage() {
         initial={form}
       />
 
-          <BookingDetail
+      <BookingDetail
         booking={selected}
         onClose={() => setDetail(null)}
         onPay={() => {
@@ -443,27 +442,47 @@ function BookingsPage() {
         bookingOnly={!!operationalBooking && !operationalSession}
         upcomingBooking={null}
         onClose={() => {
-  const bookingToReturn = operationalBooking;
-  setOperationalBookingId(null);
+          const bookingToReturn = operationalBooking;
+          setOperationalBookingId(null);
 
-  if (!bookingToReturn) return;
+          if (!bookingToReturn) return;
 
-  const now = new Date();
-  const currentDate = dateKey(now);
-  const currentMinute = minutesNow(now);
+          const current = new Date();
+          const currentDate = dateKey(current);
+          const currentMinute = minutesNow(current);
 
-  const isBookingInProgress =
-    bookingToReturn.date === currentDate &&
-    currentMinute >= toMin(bookingToReturn.start) &&
-    currentMinute < toMin(bookingToReturn.end);
+          const isBookingInProgress =
+            bookingToReturn.date === currentDate &&
+            currentMinute >= toMin(bookingToReturn.start) &&
+            currentMinute < toMin(bookingToReturn.end);
 
-  if (isBookingInProgress) {
-    setDetail(bookingToReturn.id);
-  } else {
-    setDetail(null);
-  }
-}}
+          if (isBookingInProgress) {
+            setDetail(bookingToReturn.id);
+          } else {
+            setDetail(null);
+          }
+        }}
       />
+
+      {pastSlot && (
+        <Modal
+          open
+          onClose={() => setPastSlot(null)}
+          title="Slot non prenotabile"
+          footer={
+            <Btn variant="primary" onClick={() => setPastSlot(null)}>
+              Chiudi
+            </Btn>
+          }
+        >
+          <p className="text-sm text-muted-foreground">
+            {pastSlot.courtName} · {pastSlot.date} · {pastSlot.start}–{pastSlot.end}
+          </p>
+          <p className="mt-2 text-sm">
+            Questo orario è già trascorso e non è possibile creare una nuova prenotazione.
+          </p>
+        </Modal>
+      )}
     </div>
   );
 }
@@ -483,6 +502,7 @@ function BookingForm({
   const db = useDB();
   const courts = db.courts.filter((c) => c.active);
   void family;
+
   const [bDate, setBDate] = useState(date);
   const [recurring, setRecurring] = useState(false);
   const [freq, setFreq] = useState<RecurrenceFreq>("weekly");
@@ -500,6 +520,7 @@ function BookingForm({
 
   useEffect(() => {
     if (!open || !initial) return;
+
     setCourtId(initial.courtId || (courts[0]?.id ?? ""));
     setStart(toHHMM(initial.start));
     setDuration(initial.duration ?? 90);
@@ -507,11 +528,14 @@ function BookingForm({
     setPlayers((initial.players ?? []).join(", "));
     setExtras([]);
     setNote(initial.note ?? "");
+
     const d0 = initial.date ?? date;
     setBDate(d0);
+
     const u = new Date(d0);
     u.setDate(u.getDate() + 28);
     setUntil(u.toISOString().slice(0, 10));
+
     setRecurring(false);
     setExceptions([]);
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -519,26 +543,58 @@ function BookingForm({
 
   const court = db.courts.find((c) => c.id === courtId) ?? null;
   const end = toHHMM(Math.min(OPEN_TO, toMin(start) + duration));
-  const total = court ? bookingPrice(court, duration, kind === "manutenzione" ? [] : extras) : 0;
+  const total = court
+    ? bookingPrice(court, duration, kind === "manutenzione" ? [] : extras)
+    : 0;
+
   const names = players
     .split(",")
     .map((n) => n.trim())
     .filter(Boolean);
 
   const rule = { freq, until, exceptions };
+
   const preview = useMemo(
     () =>
       recurring && court
-        ? series.preview({ courtId: court.id, date: bDate, start, end, kind, title: "", players: [], extras: [], price: 0, note: "" }, rule)
+        ? series.preview(
+            {
+              courtId: court.id,
+              date: bDate,
+              start,
+              end,
+              kind,
+              title: "",
+              players: [],
+              extras: [],
+              price: 0,
+              note: "",
+            },
+            rule,
+          )
         : [],
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [recurring, court?.id, bDate, start, end, freq, until, exceptions.join(","), db.bookings],
+    [
+      recurring,
+      court?.id,
+      bDate,
+      start,
+      end,
+      freq,
+      until,
+      exceptions.join(","),
+      db.bookings,
+    ],
   );
+
   const conflicts = preview.filter((p) => p.conflict).length;
-  const allDates = recurring ? expandRecurrence(bDate, { freq, until, exceptions: [] }) : [];
+  const allDates = recurring
+    ? expandRecurrence(bDate, { freq, until, exceptions: [] })
+    : [];
 
   const submit = () => {
     if (!court) return;
+
     const draft = {
       courtId: court.id,
       date: bDate,
@@ -559,22 +615,36 @@ function BookingForm({
       note,
       source: initial?.source ?? ("manuale" as const),
     };
+
     if (recurring) {
       const r = series.create(draft, rule, skipConflicts);
+
       if (!r.ok) {
         toast.error(r.error ?? "Impossibile creare la serie");
         return;
       }
-      toast.success(`Serie creata: ${r.created} blocchi${r.skipped?.length ? ` · ${r.skipped.length} date saltate per conflitto` : ""}`);
+
+      toast.success(
+        `Serie creata: ${r.created} blocchi${
+          r.skipped?.length
+            ? ` · ${r.skipped.length} date saltate per conflitto`
+            : ""
+        }`,
+      );
       onClose();
       return;
     }
+
     const res = reservations.create(draft);
+
     if (!res.ok) {
       toast.error(res.error ?? "Impossibile salvare la prenotazione");
       return;
     }
-    toast.success(`Prenotazione confermata · ${court.name} ${start}–${end}`);
+
+    toast.success(
+      `Prenotazione confermata · ${court.name} ${start}–${end}`,
+    );
     onClose();
   };
 
@@ -583,22 +653,42 @@ function BookingForm({
       open={open}
       onClose={onClose}
       width="w-[460px]"
-      title={initial?.source === "ai" ? "Verifica prenotazione AI" : "Nuova prenotazione"}
-      subtitle={initial?.source === "ai" ? "Controlla i dati estratti prima di confermare" : "Compila i dettagli per riservare lo slot"}
+      title={
+        initial?.source === "ai"
+          ? "Verifica prenotazione AI"
+          : "Nuova prenotazione"
+      }
+      subtitle={
+        initial?.source === "ai"
+          ? "Controlla i dati estratti prima di confermare"
+          : "Compila i dettagli per riservare lo slot"
+      }
       footer={
         <div className="grid grid-cols-2 gap-2">
           <Btn variant="outline" onClick={onClose}>
             Annulla
           </Btn>
-          <Btn variant="primary" onClick={submit} disabled={!court || (recurring && conflicts > 0 && !skipConflicts)}>
-            {recurring ? `Crea ${preview.length - (skipConflicts ? conflicts : 0)} blocchi` : "Conferma prenotazione"}
+          <Btn
+            variant="primary"
+            onClick={submit}
+            disabled={
+              !court ||
+              (recurring && conflicts > 0 && !skipConflicts)
+            }
+          >
+            {recurring
+              ? `Crea ${preview.length - (skipConflicts ? conflicts : 0)} blocchi`
+              : "Conferma prenotazione"}
           </Btn>
         </div>
       }
     >
       <div className="space-y-4">
         <Field label="1. Campo">
-          <Select value={courtId} onChange={(e) => setCourtId(e.target.value)}>
+          <Select
+            value={courtId}
+            onChange={(e) => setCourtId(e.target.value)}
+          >
             {courts.map((c) => (
               <option key={c.id} value={c.id}>
                 {c.name} — {eur(c.hourlyPrice)}/ora
@@ -608,15 +698,27 @@ function BookingForm({
         </Field>
 
         <Field label="Data">
-          <Input type="date" value={bDate} onChange={(e) => setBDate(e.target.value)} />
+          <Input
+            type="date"
+            value={bDate}
+            onChange={(e) => setBDate(e.target.value)}
+          />
         </Field>
 
         <div className="grid grid-cols-2 gap-3">
           <Field label="2. Ora inizio">
-            <Input type="time" step={1800} value={start} onChange={(e) => setStart(e.target.value)} />
+            <Input
+              type="time"
+              step={1800}
+              value={start}
+              onChange={(e) => setStart(e.target.value)}
+            />
           </Field>
           <Field label="Durata">
-            <Select value={duration} onChange={(e) => setDuration(Number(e.target.value))}>
+            <Select
+              value={duration}
+              onChange={(e) => setDuration(Number(e.target.value))}
+            >
               <option value={60}>60 min</option>
               <option value={90}>90 min</option>
               <option value={120}>120 min</option>
@@ -657,12 +759,15 @@ function BookingForm({
               <div className="grid grid-cols-2 gap-2">
                 {EXTRAS.map((ex) => {
                   const on = extras.includes(ex.id);
+
                   return (
                     <button
                       key={ex.id}
                       onClick={() =>
                         setExtras((list) =>
-                          on ? list.filter((x) => x !== ex.id) : [...list, ex.id],
+                          on
+                            ? list.filter((x) => x !== ex.id)
+                            : [...list, ex.id],
                         )
                       }
                       className={cn(
@@ -683,37 +788,73 @@ function BookingForm({
 
         <Panel className="space-y-3 p-4">
           <label className="flex items-center gap-2 text-sm font-semibold">
-            <input type="checkbox" checked={recurring} onChange={(e) => setRecurring(e.target.checked)} />
-            <Repeat className="size-4 text-primary" /> Prenotazione ricorrente
+            <input
+              type="checkbox"
+              checked={recurring}
+              onChange={(e) => setRecurring(e.target.checked)}
+            />
+            <Repeat className="size-4 text-primary" />
+            Prenotazione ricorrente
           </label>
+
           {recurring && (
             <>
               <div className="grid grid-cols-2 gap-3">
                 <Field label="Frequenza">
-                  <Select value={freq} onChange={(e) => setFreq(e.target.value as RecurrenceFreq)}>
-                    {(Object.keys(FREQ_LABEL) as RecurrenceFreq[]).map((f) => (
-                      <option key={f} value={f}>{FREQ_LABEL[f]}</option>
-                    ))}
+                  <Select
+                    value={freq}
+                    onChange={(e) =>
+                      setFreq(e.target.value as RecurrenceFreq)
+                    }
+                  >
+                    {(Object.keys(FREQ_LABEL) as RecurrenceFreq[]).map(
+                      (f) => (
+                        <option key={f} value={f}>
+                          {FREQ_LABEL[f]}
+                        </option>
+                      ),
+                    )}
                   </Select>
                 </Field>
+
                 <Field label="Fino al">
-                  <Input type="date" min={bDate} value={until} onChange={(e) => setUntil(e.target.value)} />
+                  <Input
+                    type="date"
+                    min={bDate}
+                    value={until}
+                    onChange={(e) => setUntil(e.target.value)}
+                  />
                 </Field>
               </div>
+
               <div>
                 <div className="label-caps mb-2 text-muted-foreground">
                   Date generate ({preview.length}) · tocca per escludere
                 </div>
+
                 <div className="flex max-h-44 flex-wrap gap-1.5 overflow-y-auto">
                   {allDates.map((d) => {
                     const excluded = exceptions.includes(d);
                     const p = preview.find((x) => x.date === d);
+
                     return (
                       <button
                         key={d}
                         type="button"
-                        onClick={() => setExceptions((l) => (excluded ? l.filter((x) => x !== d) : [...l, d]))}
-                        title={p?.conflict ? `Occupato: ${p.conflict.title} ${p.conflict.start}–${p.conflict.end}` : excluded ? "Esclusa" : "Libera"}
+                        onClick={() =>
+                          setExceptions((list) =>
+                            excluded
+                              ? list.filter((x) => x !== d)
+                              : [...list, d],
+                          )
+                        }
+                        title={
+                          p?.conflict
+                            ? `Occupato: ${p.conflict.title} ${p.conflict.start}–${p.conflict.end}`
+                            : excluded
+                              ? "Esclusa"
+                              : "Libera"
+                        }
                         className={cn(
                           "mono rounded border px-2 py-1 text-[11px]",
                           excluded
@@ -729,11 +870,18 @@ function BookingForm({
                   })}
                 </div>
               </div>
+
               {conflicts > 0 && (
                 <div className="space-y-2 rounded-lg border border-destructive/50 bg-destructive/10 p-3 text-xs">
-                  <div className="font-semibold text-destructive">{conflicts} date sovrapposte a prenotazioni esistenti</div>
+                  <div className="font-semibold text-destructive">
+                    {conflicts} date sovrapposte a prenotazioni esistenti
+                  </div>
                   <label className="flex items-center gap-2">
-                    <input type="checkbox" checked={skipConflicts} onChange={(e) => setSkipConflicts(e.target.checked)} />
+                    <input
+                      type="checkbox"
+                      checked={skipConflicts}
+                      onChange={(e) => setSkipConflicts(e.target.checked)}
+                    />
                     Salta le date in conflitto (diventano eccezioni)
                   </label>
                 </div>
@@ -743,28 +891,46 @@ function BookingForm({
         </Panel>
 
         <Field label="Note">
-          <Input value={note} onChange={(e) => setNote(e.target.value)} placeholder="Opzionale" />
+          <Input
+            value={note}
+            onChange={(e) => setNote(e.target.value)}
+            placeholder="Opzionale"
+          />
         </Field>
 
         <Panel className="space-y-2 p-4">
-          <Row label={`Tariffa campo (${duration} min)`} value={eur(court ? (court.hourlyPrice * duration) / 60 : 0)} />
+          <Row
+            label={`Tariffa campo (${duration} min)`}
+            value={eur(court ? (court.hourlyPrice * duration) / 60 : 0)}
+          />
+
           {kind !== "manutenzione" && extras.length > 0 && (
             <Row
               label="Extra & noleggi"
               value={eur(
-                extras.reduce((s, id) => s + (EXTRAS.find((e) => e.id === id)?.price ?? 0), 0),
+                extras.reduce(
+                  (sum, id) =>
+                    sum +
+                    (EXTRAS.find((e) => e.id === id)?.price ?? 0),
+                  0,
+                ),
               )}
             />
           )}
+
           <div className="flex items-center justify-between border-t border-border pt-2">
             <span className="label-caps">Totale prenotazione</span>
-            <span className="mono text-xl font-bold text-success">{eur(total)}</span>
+            <span className="mono text-xl font-bold text-success">
+              {eur(total)}
+            </span>
           </div>
+
           {names.length > 1 && (
             <div className="mono text-right text-xs text-muted-foreground">
               {eur(total / names.length)} / persona
             </div>
           )}
+
           <div className="mono text-xs text-muted-foreground">
             Slot: {start} → {end}
           </div>
@@ -774,7 +940,13 @@ function BookingForm({
   );
 }
 
-function Row({ label, value }: { label: string; value: string }) {
+function Row({
+  label,
+  value,
+}: {
+  label: string;
+  value: string;
+}) {
   return (
     <div className="flex items-center justify-between text-sm">
       <span className="text-muted-foreground">{label}</span>
@@ -794,6 +966,7 @@ function BookingDetail({
   canCancel: boolean;
 }) {
   const db = useDB();
+
   const [confirm, setConfirm] = useState(false);
   const [scope, setScope] = useState<SeriesScope>("this");
   const [editing, setEditing] = useState(false);
@@ -803,22 +976,55 @@ function BookingDetail({
   const [participants, setParticipants] = useState<Player[]>([]);
   const [payOpen, setPayOpen] = useState(false);
   const [payIds, setPayIds] = useState<string[]>([]);
-  const [payMethod, setPayMethod] = useState<"contanti" | "carta" | "misto">("carta");
+  const [payMethod, setPayMethod] = useState<
+    "contanti" | "carta" | "misto"
+  >("carta");
   const [payCash, setPayCash] = useState("0");
   const [bookingPriceValue, setBookingPriceValue] = useState("0");
 
+  const roundUpHalf = (value: number) =>
+    Math.ceil((Math.max(0, value) - 0.000001) * 2) / 2;
+
+  const totalOf = (players: Player[]) =>
+    Math.round(
+      players.reduce((sum, player) => sum + player.quota, 0) * 100,
+    ) / 100;
+
+  const distributeQuotas = (
+    players: Player[],
+    targetTotal: number,
+  ) => {
+    const paidTotal = players
+      .filter((player) => player.paid)
+      .reduce((sum, player) => sum + player.quota, 0);
+
+    const unpaid = players.filter((player) => !player.paid);
+    const remaining = Math.max(0, targetTotal - paidTotal);
+    const quota = unpaid.length
+      ? roundUpHalf(remaining / unpaid.length)
+      : 0;
+
+    return players.map((player) =>
+      player.paid ? player : { ...player, quota },
+    );
+  };
+
   useEffect(() => {
     if (!booking) return;
+
     setScope("this");
     setEditing(false);
     setEStart(booking.start);
     setEDur(toMin(booking.end) - toMin(booking.start));
     setECourt(booking.courtId);
-    setBookingPriceValue(String(booking.price));
 
-    const courtType = db.courts.find((c) => c.id === booking.courtId)?.type;
+    const courtType = db.courts.find(
+      (c) => c.id === booking.courtId,
+    )?.type;
+
     const isPadel = courtType === "padel";
     const maxParticipants = courtType === "beach" ? 12 : 4;
+
     const count = isPadel
       ? 4
       : Math.max(
@@ -829,26 +1035,41 @@ function BookingDetail({
           ),
         );
 
-    const initialPlayers: Player[] = Array.from({ length: count }, (_, index) => {
-      const existing = booking.participants?.[index];
+    const initialPlayers: Player[] = Array.from(
+      { length: count },
+      (_, index) => {
+        const existing = booking.participants?.[index];
 
-      return existing
-        ? { ...existing, extras: [...(existing.extras ?? [])] }
-        : {
-            id: `booking-${booking.id}-player-${index + 1}`,
-            name: booking.players[index] ?? "",
-            quota: Math.round((booking.price / count) * 100) / 100,
-            paid: false,
-            extras: [],
+        if (existing) {
+          return {
+            ...existing,
+            quota: existing.paid
+              ? existing.quota
+              : roundUpHalf(existing.quota),
+            extras: [...(existing.extras ?? [])],
           };
-    });
+        }
+
+        return {
+          id: `booking-${booking.id}-player-${index + 1}`,
+          name: booking.players[index] ?? "",
+          quota: roundUpHalf(booking.price / count),
+          paid: false,
+          extras: [],
+        };
+      },
+    );
 
     setParticipants(initialPlayers);
+    setBookingPriceValue(totalOf(initialPlayers).toFixed(2));
     setPayOpen(false);
     setPayIds([]);
-  }, [booking?.id]); // eslint-disable-line react-hooks/exhaustive-deps
+    setPayCash("0");
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [booking?.id]);
 
   if (!booking) return null;
+
   const currentDate = dateKey(new Date());
   const currentMinute = minutesNow(new Date());
 
@@ -856,68 +1077,17 @@ function BookingDetail({
     booking.date === currentDate &&
     currentMinute >= toMin(booking.start) &&
     currentMinute < toMin(booking.end);
+
+  const isBookingFuture =
+    booking.date > currentDate ||
+    (booking.date === currentDate &&
+      currentMinute < toMin(booking.start));
+
   const seriesCount = booking.seriesId
     ? db.bookings.filter(
         (b) => b.seriesId === booking.seriesId && !b.cancelled,
       ).length
     : 0;
-
-  const bookingPriceNumber = Number(
-    bookingPriceValue.replace(",", "."),
-  );
-
-  
-  const saveEdit = () => {
-    if (
-      !Number.isFinite(bookingPriceNumber) ||
-      bookingPriceNumber < 0
-    ) {
-      toast.error("Inserisci un prezzo totale valido.");
-      return;
-    }
-
-    const names = participants.map((player) => player.name.trim());
-
-    if (names.some((name) => !name)) {
-      toast.error("Inserisci il nome di tutti i partecipanti.");
-      return;
-    }
-
-    const end = toHHMM(
-      Math.min(OPEN_TO, toMin(eStart) + eDur),
-    );
-
-    const r = series.update(
-      booking.id,
-      {
-        courtId: eCourt,
-        start: eStart,
-        end,
-        price: Math.round(bookingPriceNumber * 100) / 100,
-      },
-      booking.seriesId ? scope : "this",
-    );
-
-    if (!r.ok) {
-      toast.error(r.error ?? "Modifica non riuscita");
-      return;
-    }
-
-    const saved = reservations.update(booking.id, {
-      participants,
-      players: names,
-      price: Math.round(bookingPriceNumber * 100) / 100,
-    });
-
-    if (!saved.ok) {
-      toast.error(saved.error ?? "Impossibile salvare partecipanti e quote");
-      return;
-    }
-
-    toast.success(`Aggiornati ${r.updated} blocchi`);
-    setEditing(false);
-  };
-
 
   const court = db.courts.find(
     (c) => c.id === booking.courtId,
@@ -926,9 +1096,12 @@ function BookingDetail({
   const fixedParticipants = court?.type === "padel";
   const participantLimit = court?.type === "beach" ? 12 : 4;
 
+  const bookingPriceNumber = Number(
+    bookingPriceValue.replace(",", "."),
+  );
+
   const selectedPlayers = participants.filter(
-    (player) =>
-      payIds.includes(player.id) && !player.paid,
+    (player) => payIds.includes(player.id) && !player.paid,
   );
 
   const payTotal = Math.round(
@@ -945,67 +1118,11 @@ function BookingDetail({
     ) * 100,
   ) / 100;
 
-  const cashAmount =
-    Number(payCash.replace(",", ".")) || 0;
+  const cashAmount = Number(payCash.replace(",", ".")) || 0;
 
   const updateParticipants = (next: Player[]) => {
     setParticipants(next);
-  };
-
-  const saveParticipants = () => {
-    const names = participants.map(
-      (player) => player.name.trim(),
-    );
-
-    if (names.some((name) => !name)) {
-      toast.error(
-        "Inserisci il nome di tutti i partecipanti.",
-      );
-      return false;
-    }
-
-    const price = Number(
-      bookingPriceValue.replace(",", "."),
-    );
-
-    if (!Number.isFinite(price) || price < 0) {
-      toast.error("Inserisci un prezzo totale valido.");
-      return false;
-    }
-
-    const result = reservations.update(booking.id, {
-      participants,
-      players: names,
-      price: Math.round(price * 100) / 100,
-    });
-
-    if (!result.ok) {
-      toast.error(
-        result.error ?? "Impossibile salvare i partecipanti",
-      );
-      return false;
-    }
-
-    return true;
-  };
-
-    const distributeQuotas = (
-    players: Player[],
-    targetTotal: number,
-  ) => {
-    const paidTotal = players
-      .filter((player) => player.paid)
-      .reduce((sum, player) => sum + player.quota, 0);
-
-    const unpaid = players.filter((player) => !player.paid);
-    const remaining = Math.max(0, targetTotal - paidTotal);
-    const quota = unpaid.length
-      ? Math.ceil((remaining / unpaid.length) * 2) / 2
-      : 0;
-
-    return players.map((player) =>
-      player.paid ? player : { ...player, quota },
-    );
+    setBookingPriceValue(totalOf(next).toFixed(2));
   };
 
   const updatePlayerQuota = (
@@ -1018,11 +1135,7 @@ function BookingDetail({
 
     if (!selected || selected.paid) return;
 
-    const totalBefore = participants.reduce(
-      (sum, player) => sum + player.quota,
-      0,
-    );
-
+    const totalBefore = totalOf(participants);
     const newQuota = Math.max(
       0,
       Math.round((selected.quota + delta) * 2) / 2,
@@ -1042,7 +1155,7 @@ function BookingDetail({
     );
 
     const otherQuota = otherUnpaid.length
-      ? Math.ceil((remaining / otherUnpaid.length) * 2) / 2
+      ? roundUpHalf(remaining / otherUnpaid.length)
       : 0;
 
     const next = participants.map((player) => {
@@ -1050,7 +1163,7 @@ function BookingDetail({
         return { ...player, quota: newQuota };
       }
 
-      if (!player.paid && otherUnpaid.length) {
+      if (!player.paid && otherUnpaid.length > 0) {
         return { ...player, quota: otherQuota };
       }
 
@@ -1058,26 +1171,18 @@ function BookingDetail({
     });
 
     updateParticipants(next);
-
-    setBookingPriceValue(
-      next.reduce((sum, player) => sum + player.quota, 0).toFixed(2),
-    );
   };
 
   const updateTotalPrice = (value: string) => {
-    setBookingPriceValue(value);
-
     const target = Number(value.replace(",", "."));
 
-    if (!Number.isFinite(target) || target < 0) return;
+    if (!Number.isFinite(target) || target < 0) {
+      setBookingPriceValue(value);
+      return;
+    }
 
     const next = distributeQuotas(participants, target);
-
     updateParticipants(next);
-
-    setBookingPriceValue(
-      next.reduce((sum, player) => sum + player.quota, 0).toFixed(2),
-    );
   };
 
   const addParticipant = () => {
@@ -1099,7 +1204,9 @@ function BookingDetail({
       },
     ];
 
-    updateParticipants(distributeQuotas(next, bookingPriceNumber));
+    updateParticipants(
+      distributeQuotas(next, totalOf(participants)),
+    );
   };
 
   const removeParticipant = (playerId: string) => {
@@ -1119,41 +1226,81 @@ function BookingDetail({
       (player) => player.id !== playerId,
     );
 
-    updateParticipants(distributeQuotas(next, bookingPriceNumber));
+    updateParticipants(
+      distributeQuotas(next, totalOf(participants)),
+    );
   };
 
-  const submitPrepayment = () => {
-    if (!payIds.length) {
-      toast.error(
-        "Seleziona almeno un partecipante da pagare.",
-      );
-      return;
-    }
-
+  const saveEdit = () => {
     if (
-      participants.some(
-        (player) => !player.name.trim(),
-      )
+      !Number.isFinite(bookingPriceNumber) ||
+      bookingPriceNumber < 0
     ) {
-      toast.error(
-        "Inserisci il nome di tutti i partecipanti.",
-      );
-      return;
-    }
-
-    const price = Number(
-      bookingPriceValue.replace(",", "."),
-    );
-
-    if (!Number.isFinite(price) || price < 0) {
       toast.error("Inserisci un prezzo totale valido.");
       return;
     }
 
-    if (payTotal <= 0) {
+    const names = participants.map((player) => player.name.trim());
+
+    if (names.some((name) => !name)) {
+      toast.error("Inserisci il nome di tutti i partecipanti.");
+      return;
+    }
+
+    const end = toHHMM(
+      Math.min(OPEN_TO, toMin(eStart) + eDur),
+    );
+
+    const finalPrice = totalOf(participants);
+
+    const result = series.update(
+      booking.id,
+      {
+        courtId: eCourt,
+        start: eStart,
+        end,
+        price: finalPrice,
+      },
+      booking.seriesId ? scope : "this",
+    );
+
+    if (!result.ok) {
+      toast.error(result.error ?? "Modifica non riuscita");
+      return;
+    }
+
+    const saved = reservations.update(booking.id, {
+      participants,
+      players: names,
+      price: finalPrice,
+    });
+
+    if (!saved.ok) {
       toast.error(
-        "Il totale del pagamento deve essere maggiore di zero.",
+        saved.error ?? "Impossibile salvare partecipanti e quote",
       );
+      return;
+    }
+
+    toast.success(`Aggiornati ${result.updated} blocchi`);
+    setEditing(false);
+  };
+
+  const submitPrepayment = () => {
+    if (!payIds.length) {
+      toast.error("Seleziona almeno un partecipante da pagare.");
+      return;
+    }
+
+    if (participants.some((player) => !player.name.trim())) {
+      toast.error("Inserisci il nome di tutti i partecipanti.");
+      return;
+    }
+
+    const price = totalOf(participants);
+
+    if (payTotal <= 0) {
+      toast.error("Il totale del pagamento deve essere maggiore di zero.");
       return;
     }
 
@@ -1161,24 +1308,18 @@ function BookingDetail({
       payMethod === "misto" &&
       (cashAmount < 0 || cashAmount > payTotal)
     ) {
-      toast.error(
-        "Controlla la ripartizione tra contanti e carta.",
-      );
+      toast.error("Controlla la ripartizione tra contanti e carta.");
       return;
     }
 
     const saved = reservations.update(booking.id, {
       participants,
-      players: participants.map(
-        (player) => player.name.trim(),
-      ),
-      price: Math.round(price * 100) / 100,
+      players: participants.map((player) => player.name.trim()),
+      price,
     });
 
     if (!saved.ok) {
-      toast.error(
-        saved.error ?? "Impossibile salvare i partecipanti",
-      );
+      toast.error(saved.error ?? "Impossibile salvare i partecipanti");
       return;
     }
 
@@ -1199,9 +1340,7 @@ function BookingDetail({
     );
 
     if (!result.ok) {
-      toast.error(
-        result.error ?? "Pagamento non riuscito",
-      );
+      toast.error(result.error ?? "Pagamento non riuscito");
       return;
     }
 
@@ -1232,20 +1371,58 @@ function BookingDetail({
           !booking.cancelled ? (
             <div className="grid grid-cols-2 gap-2">
               {editing ? (
-                <Btn
-                  variant="primary"
-                  onClick={saveEdit}
-                >
-                  Salva modifiche
-                </Btn>
+                <>
+                  <Btn
+                    variant="outline"
+                    onClick={() => setEditing(false)}
+                  >
+                    Annulla modifiche
+                  </Btn>
+                  <Btn variant="primary" onClick={saveEdit}>
+                    Salva modifiche
+                  </Btn>
+                </>
               ) : (
-                <Btn
-                  variant="outline"
-                  onClick={() => setEditing(true)}
-                >
-                  <Pencil className="size-4" /> Modifica
-                </Btn>
+                <>
+                  <Btn
+                    variant="outline"
+                    onClick={() => setEditing(true)}
+                    disabled={!isBookingFuture}
+                  >
+                    <Pencil className="size-4" /> Modifica
+                  </Btn>
+                  <Btn
+                    variant="primary"
+                    onClick={onPay}
+                    disabled={!isBookingFuture}
+                  >
+                    PAGA
+                  </Btn>
+                </>
               )}
+            </div>
+          ) : null
+        }
+      >
+        <div className="space-y-4">
+          <Panel className="space-y-2 p-4">
+            <Row label="Data" value={booking.date} />
+            <Row label="Orario" value={`${booking.start} – ${booking.end}`} />
+            <Row
+              label="Prezzo totale prenotazione"
+              value={`${totalOf(participants).toFixed(2)} €`}
+            />
+            {booking.seriesId && (
+              <Row
+                label="Prenotazione ricorrente"
+                value={`${seriesCount} blocchi`}
+              />
+            )}
+            {isBookingInProgress && (
+              <Badge tone="success">PARTITA IN CORSO</Badge>
+            )}
+          </Panel>
+
           {editing && (
             <Panel className="space-y-3 p-4">
               <Field label="Prezzo totale prenotazione (€)">
@@ -1263,13 +1440,13 @@ function BookingDetail({
               <Field label="Campo">
                 <Select
                   value={eCourt}
-                  onChange={(e) => setECourt(e.target.value)}
+                  onChange={(event) => setECourt(event.target.value)}
                 >
                   {db.courts
-                    .filter((c) => c.active)
-                    .map((c) => (
-                      <option key={c.id} value={c.id}>
-                        {c.name}
+                    .filter((item) => item.active)
+                    .map((item) => (
+                      <option key={item.id} value={item.id}>
+                        {item.name}
                       </option>
                     ))}
                 </Select>
@@ -1281,264 +1458,166 @@ function BookingDetail({
                     type="time"
                     step={1800}
                     value={eStart}
-                    onChange={(e) => setEStart(e.target.value)}
+                    onChange={(event) => setEStart(event.target.value)}
                   />
                 </Field>
 
                 <Field label="Durata">
                   <Select
                     value={eDur}
-                    onChange={(e) => setEDur(Number(e.target.value))}
+                    onChange={(event) =>
+                      setEDur(Number(event.target.value))
+                    }
                   >
-                    {[60, 90, 120].map((m) => (
-                      <option key={m} value={m}>
-                        {m} min
+                    {[60, 90, 120].map((minutes) => (
+                      <option key={minutes} value={minutes}>
+                        {minutes} min
                       </option>
                     ))}
                   </Select>
                 </Field>
               </div>
 
-              <p className="text-xs text-muted-foreground">
-                Se anche un solo blocco va in conflitto,
-                nessuna modifica viene applicata.
-              </p>
-            </Panel>
-          )}
-              <div className="mono text-xs text-muted-foreground">
-                {FREQ_LABEL[booking.recurrence.freq]} fino al{" "}
-                {booking.recurrence.until}
-
-                {booking.recurrence.exceptions.length > 0 &&
-                  ` · eccezioni: ${booking.recurrence.exceptions.join(", ")}`}
-              </div>
-
-              <Field label="Applica modifiche / annullamento a">
-                <Select
-                  value={scope}
-                  onChange={(e) =>
-                    setScope(e.target.value as SeriesScope)
-                  }
-                >
-                  <option value="this">
-                    Solo questo blocco
-                  </option>
-                  <option value="future">
-                    Questo e i successivi
-                  </option>
-                  <option value="all">
-                    Tutta la serie
-                  </option>
-                </Select>
-              </Field>
-            </Panel>
-          )}
-
-          {editing && (
-                          <Field label="Prezzo totale prenotazione (€)">
-                <Input
-                  type="number"
-                  min="0"
-                  step="0.01"
-                  value={bookingPriceValue}
-                  onChange={(event) =>
-                    setBookingPriceValue(event.target.value)
-                  }
-                />
-              </Field>
-
-              <Field label="Campo">
-                <Select
-                  value={eCourt}
-                  onChange={(e) =>
-                    setECourt(e.target.value)
-                  }
-                >
-                  {db.courts
-                    .filter((c) => c.active)
-                    .map((c) => (
-                      <option key={c.id} value={c.id}>
-                        {c.name}
-                      </option>
-                    ))}
-                </Select>
-              </Field>
-            <div className="space-y-2">
-              {participants.map((player, index) => (
-                <div
-                  key={player.id}
-                  className="flex items-center gap-2 rounded-lg border border-border bg-surface-container px-3 py-2"
-                >
-                  <span className="mono flex size-6 shrink-0 items-center justify-center rounded-full bg-primary/20 text-[11px] text-primary">
-                    {index + 1}
-                  </span>
-
-                  <Input
-                    value={player.name}
-                    placeholder={`Giocatore ${index + 1}`}
-                    disabled={
-                      !editing || player.paid || booking.cancelled
-                    }
-                    onChange={(event) =>
-                      setParticipants((current) =>
-                        current.map((item) =>
-                          item.id === player.id
-                            ? { ...item, name: event.target.value }
-                            : item,
-                        ),
-                      )
-                    }
-                    className="min-w-0"
-                  />
-
-                  <div className="flex shrink-0 items-center gap-1">
-                    <button
-                      type="button"
-                      className="rounded-md border border-border px-2 py-1 disabled:opacity-40"
-                      disabled={!editing || player.paid || booking.cancelled || player.quota < 0.5}
-                      onClick={() => updatePlayerQuota(player.id, -0.5)}
-                    >
-                      −
-                    </button>
-
-                    <span className="mono min-w-14 text-center text-sm">
-                      {eur(player.quota)}
-                    </span>
-
-                    <button
-                      type="button"
-                      className="rounded-md border border-border px-2 py-1 disabled:opacity-40"
-                      disabled={!editing || player.paid || booking.cancelled}
-                      onClick={() => updatePlayerQuota(player.id, 0.5)}
-                    >
-                      +
-                    </button>
-                  </div>
-
-                  {player.paid ? (
-                    <Badge tone="success">PAGATO</Badge>
-                  ) : (
-                    <Badge tone="warning">DA PAGARE</Badge>
-                  )}
-
-                  {!fixedParticipants &&
-                    participants.length > 2 &&
-                    !player.paid &&
-                    !booking.cancelled && (
-                      <button
-                        type="button"
-                        disabled={!editing}
-                        className="rounded p-1 text-muted-foreground hover:text-destructive disabled:opacity-40"
-                        title="Rimuovi giocatore"
-                        onClick={() => removeParticipant(player.id)}
-                      >
-                        <Trash2 className="size-4" />
-                      </button>
-                    )}
-                </div>
-              ))}
-            </div>
-            <div className="space-y-2">
-              {participants.map((player, index) => (
-                <div
-                  key={player.id}
-                  className="flex items-center gap-2 rounded-lg border border-border bg-surface-container px-3 py-2"
-                >
-                  <span className="mono flex size-6 shrink-0 items-center justify-center rounded-full bg-primary/20 text-[11px] text-primary">
-                    {index + 1}
-                  </span>
-
-                  <Input
-                    value={player.name}
-                    placeholder={`Giocatore ${index + 1}`}
-                    disabled={
-                      player.paid || booking.cancelled
-                    }
-                    onChange={(event) =>
-                      setParticipants((current) =>
-                        current.map((item) =>
-                          item.id === player.id
-                            ? {
-                                ...item,
-                                name: event.target.value,
-                              }
-                            : item,
-                        ),
-                      )
-                    }
-                    className="min-w-0"
-                  />
-
-                  <div className="w-24 shrink-0">
-                    <Input
-                      type="number"
-                      min="0"
-                      step="0.01"
-                      value={String(player.quota)}
-                      disabled={
-                        player.paid || booking.cancelled
-                      }
+              {booking.seriesId && (
+                <>
+                  <p className="text-xs text-muted-foreground">
+                    Se anche un solo blocco va in conflitto, nessuna modifica
+                    viene applicata.
+                  </p>
+                  <Field label="Applica modifiche a">
+                    <Select
+                      value={scope}
                       onChange={(event) =>
-                        setParticipants((current) =>
-                          current.map((item) =>
-                            item.id === player.id
-                              ? {
-                                  ...item,
-                                  quota: Math.max(
-                                    0,
-                                    Number(event.target.value) || 0,
-                                  ),
-                                }
-                              : item,
-                          ),
-                        )
+                        setScope(event.target.value as SeriesScope)
                       }
-                    />
-                  </div>
+                    >
+                      <option value="this">Solo questo blocco</option>
+                      <option value="future">Questo e i successivi</option>
+                      <option value="all">Tutta la serie</option>
+                    </Select>
+                  </Field>
+                </>
+              )}
 
-                  {player.paid ? (
-                    <Badge tone="success">
-                      PAGATO
-                    </Badge>
-                  ) : (
-                    <Badge tone="warning">
-                      DA PAGARE
-                    </Badge>
-                  )}
+              {!fixedParticipants && (
+                <Btn
+                  variant="outline"
+                  size="sm"
+                  onClick={addParticipant}
+                  disabled={participants.length >= participantLimit}
+                >
+                  <Plus className="size-3" /> Aggiungi giocatore
+                </Btn>
+              )}
+            </Panel>
+          )}
 
-                  {!fixedParticipants &&
-                    participants.length > 2 &&
-                    !player.paid &&
-                    !booking.cancelled && (
-                      <button
-                        type="button"
-                        className="rounded p-1 text-muted-foreground hover:text-destructive"
-                        title="Rimuovi giocatore"
-                        onClick={() =>
-                          removeParticipant(player.id)
-                        }
-                      >
-                        <Trash2 className="size-4" />
-                      </button>
-                    )}
-                </div>
-              ))}
+          <Panel className="space-y-3 p-4">
+            <div className="label-caps text-muted-foreground">
+              Partecipanti e quote
             </div>
 
-            
-          </div>
+            {participants.map((player, index) => (
+              <div
+                key={player.id}
+                className="flex items-center gap-2 rounded-lg border border-border bg-surface-container px-3 py-2"
+              >
+                <span className="mono flex size-6 shrink-0 items-center justify-center rounded-full bg-primary/20 text-[11px] text-primary">
+                  {index + 1}
+                </span>
+
+                <Input
+                  value={player.name}
+                  placeholder={`Giocatore ${index + 1}`}
+                  disabled={!editing || player.paid || booking.cancelled}
+                  onChange={(event) =>
+                    setParticipants((current) =>
+                      current.map((item) =>
+                        item.id === player.id
+                          ? { ...item, name: event.target.value }
+                          : item,
+                      ),
+                    )
+                  }
+                  className="min-w-0"
+                />
+
+                <div className="flex shrink-0 items-center gap-1">
+                  <button
+                    type="button"
+                    className="rounded-md border border-border px-2 py-1 disabled:opacity-40"
+                    disabled={
+                      !editing ||
+                      player.paid ||
+                      booking.cancelled ||
+                      player.quota < 0.5
+                    }
+                    onClick={() => updatePlayerQuota(player.id, -0.5)}
+                  >
+                    −
+                  </button>
+
+                  <span className="mono min-w-14 text-center text-sm">
+                    {eur(player.quota)}
+                  </span>
+
+                  <button
+                    type="button"
+                    className="rounded-md border border-border px-2 py-1 disabled:opacity-40"
+                    disabled={!editing || player.paid || booking.cancelled}
+                    onClick={() => updatePlayerQuota(player.id, 0.5)}
+                  >
+                    +
+                  </button>
+                </div>
+
+                {player.paid ? (
+                  <Badge tone="success">PAGATO</Badge>
+                ) : (
+                  <Badge tone="warning">DA PAGARE</Badge>
+                )}
+
+                {!fixedParticipants &&
+                  participants.length > 2 &&
+                  !player.paid &&
+                  !booking.cancelled && (
+                    <button
+                      type="button"
+                      disabled={!editing}
+                      className="rounded p-1 text-muted-foreground hover:text-destructive disabled:opacity-40"
+                      title="Rimuovi giocatore"
+                      onClick={() => removeParticipant(player.id)}
+                    >
+                      <Trash2 className="size-4" />
+                    </button>
+                  )}
+              </div>
+            ))}
+          </Panel>
+                    {!booking.cancelled &&
+            booking.kind !== "manutenzione" &&
+            isBookingFuture && (
+              <Panel className="p-3">
+                <Toggle
+                  checked={false}
+                  onChange={(enabled) => {
+                    if (enabled) onPay();
+                  }}
+                  label="PAGA"
+                  hint="Apri la scheda operativa con quote, extra e pagamenti."
+                />
+              </Panel>
+            )}
 
           {booking.extras.length > 0 && (
             <div>
               <div className="label-caps mb-2 text-muted-foreground">
                 Extra
               </div>
-
               <div className="flex flex-wrap gap-2">
                 {booking.extras.map((id) => (
                   <Badge key={id} tone="info">
-                    {EXTRAS.find((e) => e.id === id)?.label ??
-                      id}
+                    {EXTRAS.find((extra) => extra.id === id)?.label ?? id}
                   </Badge>
                 ))}
               </div>
@@ -1549,6 +1628,20 @@ function BookingDetail({
             <p className="text-sm text-muted-foreground">
               Note: {booking.note}
             </p>
+          )}
+
+          {booking.cancelled && (
+            <Badge tone="danger">PRENOTAZIONE ANNULLATA</Badge>
+          )}
+
+          {!booking.cancelled && canCancel && (
+            <Btn
+              variant="danger"
+              block
+              onClick={() => setConfirm(true)}
+            >
+              Annulla prenotazione
+            </Btn>
           )}
         </div>
       </Drawer>
@@ -1572,8 +1665,7 @@ function BookingDetail({
                 !payIds.length ||
                 payTotal <= 0 ||
                 (payMethod === "misto" &&
-                  (cashAmount < 0 ||
-                    cashAmount > payTotal))
+                  (cashAmount < 0 || cashAmount > payTotal))
               }
               onClick={submitPrepayment}
             >
@@ -1584,9 +1676,8 @@ function BookingDetail({
       >
         <div className="space-y-4">
           <p className="text-sm text-muted-foreground">
-            Seleziona i partecipanti che saldano ora.
-            La prenotazione rimane confermata fino
-            all'orario di inizio.
+            Seleziona i partecipanti che saldano ora. La prenotazione rimane
+            confermata fino all'orario di inizio.
           </p>
 
           <div className="space-y-2">
@@ -1603,9 +1694,7 @@ function BookingDetail({
                     setPayIds((current) =>
                       event.target.checked
                         ? [...current, player.id]
-                        : current.filter(
-                            (id) => id !== player.id,
-                          ),
+                        : current.filter((id) => id !== player.id),
                     )
                   }
                 />
@@ -1614,7 +1703,7 @@ function BookingDetail({
                   {player.name || "Nome da inserire"}
                 </span>
 
-                               <div
+                <div
                   className="flex shrink-0 items-center gap-1"
                   onClick={(event) => event.stopPropagation()}
                 >
@@ -1642,9 +1731,7 @@ function BookingDetail({
                 </div>
 
                 {player.paid && (
-                  <Badge tone="success">
-                    PAGATO
-                  </Badge>
+                  <Badge tone="success">PAGATO</Badge>
                 )}
               </label>
             ))}
@@ -1655,22 +1742,13 @@ function BookingDetail({
               value={payMethod}
               onChange={(event) =>
                 setPayMethod(
-                  event.target.value as
-                    | "contanti"
-                    | "carta"
-                    | "misto",
+                  event.target.value as "contanti" | "carta" | "misto",
                 )
               }
             >
-              <option value="contanti">
-                Contanti
-              </option>
-              <option value="carta">
-                Carta / POS
-              </option>
-              <option value="misto">
-                Misto
-              </option>
+              <option value="contanti">Contanti</option>
+              <option value="carta">Carta / POS</option>
+              <option value="misto">Misto</option>
             </Select>
           </Field>
 
@@ -1682,16 +1760,11 @@ function BookingDetail({
                 max={payTotal}
                 step="0.01"
                 value={payCash}
-                onChange={(event) =>
-                  setPayCash(event.target.value)
-                }
+                onChange={(event) => setPayCash(event.target.value)}
               />
 
               <p className="text-xs text-muted-foreground">
-                Carta:{" "}
-                {eur(
-                  Math.max(0, payTotal - cashAmount),
-                )}
+                Carta: {eur(Math.max(0, payTotal - cashAmount))}
               </p>
             </Field>
           )}
@@ -1700,7 +1773,6 @@ function BookingDetail({
             <span className="label-caps text-muted-foreground">
               Totale selezionato
             </span>
-
             <span className="mono text-xl font-bold">
               {eur(payTotal)}
             </span>
@@ -1724,14 +1796,14 @@ function BookingDetail({
             <Btn
               variant="danger"
               onClick={() => {
-                const n = series.cancel(
+                const count = series.cancel(
                   booking.id,
                   booking.seriesId ? scope : "this",
                 );
 
                 toast.success(
-                  n > 1
-                    ? `${n} blocchi annullati`
+                  count > 1
+                    ? `${count} blocchi annullati`
                     : "Prenotazione annullata, slot liberato",
                 );
 
@@ -1745,59 +1817,110 @@ function BookingDetail({
         }
       >
         <p className="text-sm text-muted-foreground">
-          Lo slot {booking.start}–{booking.end} su{" "}
-          {court?.name} tornerà disponibile e la mappa
-          dei campi si aggiornerà al blocco successivo.
+          Lo slot {booking.start}–{booking.end} su {court?.name} tornerà
+          disponibile e la mappa dei campi si aggiornerà al blocco successivo.
         </p>
+
+        {booking.seriesId && (
+          <Field label="Applica annullamento a">
+            <Select
+              value={scope}
+              onChange={(event) =>
+                setScope(event.target.value as SeriesScope)
+              }
+            >
+              <option value="this">Solo questo blocco</option>
+              <option value="future">Questo e i successivi</option>
+              <option value="all">Tutta la serie</option>
+            </Select>
+          </Field>
+        )}
       </Modal>
     </>
   );
 }
 
-const WEEKDAYS = ["domenica", "lunedì", "martedì", "mercoledì", "giovedì", "venerdì", "sabato"];
+const WEEKDAYS = [
+  "domenica",
+  "lunedì",
+  "martedì",
+  "mercoledì",
+  "giovedì",
+  "venerdì",
+  "sabato",
+];
 
-function AiAssistant({ onExtract }: { onExtract: (init: FormInit) => void }) {
+function AiAssistant({
+  onExtract,
+}: {
+  onExtract: (init: FormInit) => void;
+}) {
   const db = useDB();
   const parse = useServerFn(parseBookingRequest);
   const [text, setText] = useState("");
   const [loading, setLoading] = useState(false);
-  const [info, setInfo] = useState<{ summary: string; missing: string[] } | null>(null);
+  const [info, setInfo] = useState<{
+    summary: string;
+    missing: string[];
+  } | null>(null);
   const [error, setError] = useState("");
 
   const run = async () => {
     if (text.trim().length < 3 || loading) return;
+
     setLoading(true);
     setError("");
     setInfo(null);
+
     try {
-      const n = new Date();
-      const r = await parse({
+      const now = new Date();
+
+      const result = await parse({
         data: {
           text,
-          today: dateKey(n),
-          weekday: WEEKDAYS[n.getDay()] ?? "",
-          now: toHHMM(minutesNow(n)),
-          courts: db.courts.filter((c) => c.active).map((c) => ({ id: c.id, name: c.name, type: c.type })),
+          today: dateKey(now),
+          weekday: WEEKDAYS[now.getDay()] ?? "",
+          now: toHHMM(minutesNow(now)),
+          courts: db.courts
+            .filter((court) => court.active)
+            .map((court) => ({
+              id: court.id,
+              name: court.name,
+              type: court.type,
+            })),
         },
       });
-      if (!r.ok) {
-        setError(r.error);
+
+      if (!result.ok) {
+        setError(result.error);
         return;
       }
-      const x = r.result;
-      setInfo({ summary: x.summary, missing: x.missing });
+
+      const extracted = result.result;
+
+      setInfo({
+        summary: extracted.summary,
+        missing: extracted.missing,
+      });
+
       onExtract({
-        courtId: x.courtId ?? "",
-        start: x.start ? toMin(x.start) : OPEN_FROM,
-        ...(x.date ? { date: x.date } : {}),
-        duration: x.durationMin && [60, 90, 120].includes(x.durationMin) ? x.durationMin : 90,
-        kind: x.kind ?? "partita",
-        players: x.players,
-        note: x.note,
+        courtId: extracted.courtId ?? "",
+        start: extracted.start ? toMin(extracted.start) : OPEN_FROM,
+        ...(extracted.date ? { date: extracted.date } : {}),
+        duration:
+          extracted.durationMin &&
+          [60, 90, 120].includes(extracted.durationMin)
+            ? extracted.durationMin
+            : 90,
+        kind: extracted.kind ?? "partita",
+        players: extracted.players,
+        note: extracted.note,
         source: "ai",
       });
-    } catch (e) {
-      setError(e instanceof Error ? e.message : "Errore imprevisto");
+    } catch (error) {
+      setError(
+        error instanceof Error ? error.message : "Errore imprevisto",
+      );
     } finally {
       setLoading(false);
     }
@@ -1806,25 +1929,47 @@ function AiAssistant({ onExtract }: { onExtract: (init: FormInit) => void }) {
   return (
     <Panel className="space-y-2 p-3">
       <div className="label-caps flex items-center gap-2 text-primary">
-        <Wand2 className="size-4" /> Prenotazione rapida con AI
+        <Wand2 className="size-4" />
+        Prenotazione rapida con AI
       </div>
+
       <div className="flex flex-col gap-2 sm:flex-row">
         <Input
           value={text}
-          onChange={(e) => setText(e.target.value)}
-          onKeyDown={(e) => e.key === "Enter" && run()}
+          onChange={(event) => setText(event.target.value)}
+          onKeyDown={(event) =>
+            event.key === "Enter" && run()
+          }
           placeholder="Es. domani alle 18:30 padel 2 per 90 minuti, Rossi e Bianchi"
           className="flex-1"
         />
-        <Btn variant="primary" onClick={run} disabled={loading || text.trim().length < 3}>
-          {loading ? <Loader2 className="size-4 animate-spin" /> : <Wand2 className="size-4" />} Estrai
+
+        <Btn
+          variant="primary"
+          onClick={run}
+          disabled={loading || text.trim().length < 3}
+        >
+          {loading ? (
+            <Loader2 className="size-4 animate-spin" />
+          ) : (
+            <Wand2 className="size-4" />
+          )}
+          Estrai
         </Btn>
       </div>
-      {error && <p className="text-xs text-destructive">{error}</p>}
+
+      {error && (
+        <p className="text-xs text-destructive">{error}</p>
+      )}
+
       {info && (
         <p className="text-xs text-muted-foreground">
           {info.summary}
-          {info.missing.length > 0 && <span className="text-warning"> · Da verificare: {info.missing.join(", ")}</span>}
+          {info.missing.length > 0 && (
+            <span className="text-warning">
+              {" "}· Da verificare: {info.missing.join(", ")}
+            </span>
+          )}
         </p>
       )}
     </Panel>
