@@ -1692,6 +1692,18 @@ for (const player of updatedPlayers) {
     }
 
     const stockChanges = new Map<string, number>();
+      
+    if (
+      input.paymentMethod === "misto" &&
+      remainingCashForNewPayments > 0.005
+    ) {
+      return {
+        ok: false,
+        error:
+          "I contanti indicati superano il totale dei nuovi incassi da registrare.",
+      };
+    }
+
 
     for (const player of session.players) {
       for (const extra of player.extras) {
