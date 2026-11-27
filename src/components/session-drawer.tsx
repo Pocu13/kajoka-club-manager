@@ -467,34 +467,36 @@ export function SessionDrawer({
                   </Btn>
                 </div>
 
-                               <Btn
-                  variant="subtle"
-                  className="w-full"
-                  onClick={() => {
-                    if (booking) {
-                      const result = courtSessions.deactivateBooking(booking.id);
+                                  {!bookingOnly && (
+                  <Btn
+                    variant="subtle"
+                    className="w-full"
+                    onClick={() => {
+                      if (booking) {
+                        const result = courtSessions.deactivateBooking(booking.id);
 
-                      if (!result.ok) {
-                        toast.error(
-                          result.error ?? "Impossibile disattivare la prenotazione.",
-                        );
+                        if (!result.ok) {
+                          toast.error(
+                            result.error ?? "Impossibile disattivare la prenotazione.",
+                          );
+                          return;
+                        }
+
+                        toast.success("Prenotazione disattivata. Campo liberato.");
+                        onClose();
                         return;
                       }
 
-                      toast.success("Prenotazione disattivata. Campo liberato.");
+                      courtSessions.close(session.id);
+                      toast.success(`Sessione ${court.name} chiusa`);
                       onClose();
-                      return;
-                    }
-
-                    courtSessions.close(session.id);
-                    toast.success(`Sessione ${court.name} chiusa`);
-                    onClose();
-                  }}
-                >
-                  {booking
-                    ? "Disattiva prenotazione"
-                    : "Chiudi sessione e libera il campo"}
-                </Btn>
+                    }}
+                  >
+                    {booking
+                      ? "Disattiva prenotazione"
+                      : "Chiudi sessione e libera il campo"}
+                  </Btn>
+                )}
               </div>
             )
           ) : (
