@@ -1382,22 +1382,15 @@ function BookingDetail({
                     Salva modifiche
                   </Btn>
                 </>
-              ) : (
-                <>
-                  <Btn
-                    variant="outline"
-                    onClick={() => setEditing(true)}
-                    disabled={!isBookingFuture}
-                  >
-                    <Pencil className="size-4" /> Modifica
-                  </Btn>
-                  <Btn
-                    variant="primary"
-                    onClick={onPay}
-                    disabled={!isBookingFuture}
-                  >
-                    PAGA
-                  </Btn>
+                            ) : (
+                <Btn
+                  variant="outline"
+                  onClick={() => setEditing(true)}
+                  disabled={!isBookingFuture}
+                >
+                  <Pencil className="size-4" /> Modifica
+                </Btn>
+              )}
                 </>
               )}
             </div>
