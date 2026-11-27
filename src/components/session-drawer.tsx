@@ -334,13 +334,13 @@ export function SessionDrawer({
     toast.success("Prezzo, partecipanti e quote salvati.");
   };
 
-    const updateClosedPlayer = (
+      const updateClosedPlayer = (
     playerId: string,
     patch: Partial<
       Pick<Player, "name" | "quota" | "paid" | "extras">
     >,
   ) => {
-    if (!editingClosedDetails) return;
+    if (!editingClosedDetails || !canEditClosedDetails) return;
 
     setClosedPlayers((current) =>
       current.map((item) =>
@@ -351,8 +351,41 @@ export function SessionDrawer({
     );
   };
 
+  const updateClosedExtra = (
+    playerId: string,
+    productId: string,
+    patch: Partial<Player["extras"][number]>,
+  ) => {
+    const item = closedPlayers.find((player) => player.id === playerId);
+    if (!item) return;
+
+    updateClosedPlayer(playerId, {
+      extras: item.extras.map((extra) =>
+        extra.productId === productId
+          ? { ...extra, ...patch }
+          : extra,
+      ),
+    });
+  };
+
+  const removeClosedExtra = (
+    playerId: string,
+    productId: string,
+  ) => {
+    const item = closedPlayers.find((player) => player.id === playerId);
+    if (!item) return;
+
+    updateClosedPlayer(playerId, {
+      extras: item.extras.filter(
+        (extra) => extra.productId !== productId,
+      ),
+    });
+  };
+
   const saveClosedSession = () => {
-    if (!session?.closed) return;
+    if (!canEditClosedDetails || !editingClosedDetails || !session?.closed) {
+      return;
+    }
 
     const total = Number(closedTotal.replace(",", "."));
 
@@ -362,20 +395,30 @@ export function SessionDrawer({
     }
 
     for (const item of closedPlayers) {
-      if (item.paid) continue;
-
       if (!item.name.trim()) {
-        toast.error("Inserisci il nome di tutti i giocatori non pagati.");
+        toast.error("Inserisci il nome di tutti i giocatori.");
         return;
       }
 
       if (!Number.isFinite(item.quota) || item.quota < 0) {
-        toast.error(`Controlla la quota di ${item.name || "un giocatore"}.`);
+        toast.error(`Controlla la quota di ${item.name}.`);
         return;
+      }
+
+      for (const extra of item.extras) {
+        if (
+          !Number.isFinite(extra.qty) ||
+          extra.qty <= 0 ||
+          !Number.isFinite(extra.price) ||
+          extra.price < 0
+        ) {
+          toast.error(`Controlla gli extra di ${item.name}.`);
+          return;
+        }
       }
     }
 
-        const result = courtSessions.updateClosedDetails(session.id, {
+    const result = courtSessions.updateClosedDetails(session.id, {
       total: Math.round(total * 100) / 100,
       players: closedPlayers.map((item) => ({
         id: item.id,
@@ -391,7 +434,9 @@ export function SessionDrawer({
       return;
     }
 
+    setEditingClosedDetails(false);
     toast.success("Resoconto della partita aggiornato.");
+  };
   };
 
   return (
