@@ -714,24 +714,80 @@ export const courtSessions = {
    * Gestione operativa anticipata direttamente sulla prenotazione.
    * Non crea sessioni e non occupa il campo.
    */
-  updateBookingQuotas(bookingId: string, quotas: Record<string, number>) {
+ 
+  updateBookingQuotas(
+    bookingId: string,
+    playerId: string,
+    newQuota: number,
+  ) {
     set((d) => {
       d.bookings = d.bookings.map((booking) => {
         if (booking.id !== bookingId) return booking;
 
-        const participants = (booking.participants ?? []).map((player) => ({
-          ...player,
-          quota: player.paid ? player.quota : Math.max(0, quotas[player.id] ?? player.quota),
-        }));
+        const participants = booking.participants ?? [];
+        const selectedPlayer = participants.find(
+          (player) => player.id === playerId,
+        );
+
+        if (!selectedPlayer || selectedPlayer.paid) return booking;
+
+        const totalBefore = participants.reduce(
+          (sum, player) => sum + player.quota,
+          0,
+        );
+
+        const quota = Math.max(
+          0,
+          Math.round(newQuota * 2) / 2,
+        );
+
+        const otherUnpaid = participants.filter(
+          (player) => !player.paid && player.id !== playerId,
+        );
+
+        const paidTotal = participants
+          .filter((player) => player.paid)
+          .reduce((sum, player) => sum + player.quota, 0);
+
+        const remaining = Math.max(
+          0,
+          totalBefore - paidTotal - quota,
+        );
+
+        const redistributedQuota =
+          otherUnpaid.length > 0
+            ? Math.ceil((remaining / otherUnpaid.length) * 2) / 2
+            : 0;
+
+        const updatedParticipants = participants.map((player) => {
+          if (player.id === playerId) {
+            return { ...player, quota };
+          }
+
+          if (!player.paid && otherUnpaid.length > 0) {
+            return {
+              ...player,
+              quota: redistributedQuota,
+            };
+          }
+
+          return player;
+        });
 
         return {
           ...booking,
-          participants,
-          price: round(participants.reduce((sum, player) => sum + player.quota, 0)),
+          participants: updatedParticipants,
+          price: Math.round(
+            updatedParticipants.reduce(
+              (sum, player) => sum + player.quota,
+              0,
+            ) * 100,
+          ) / 100,
         };
       });
     });
   },
+
 
   addBookingExtra(bookingId: string, playerId: string, productId: string) {
     const db = getDB();
