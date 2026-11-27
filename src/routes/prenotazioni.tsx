@@ -1370,7 +1370,7 @@ function BookingDetail({
         footer={
           !booking.cancelled ? (
             <div className="grid grid-cols-2 gap-2">
-              {editing ? (
+                           {editing ? (
                 <>
                   <Btn
                     variant="outline"
@@ -1382,7 +1382,7 @@ function BookingDetail({
                     Salva modifiche
                   </Btn>
                 </>
-                            ) : (
+              ) : (
                 <Btn
                   variant="outline"
                   onClick={() => setEditing(true)}
@@ -1391,9 +1391,6 @@ function BookingDetail({
                   <Pencil className="size-4" /> Modifica
                 </Btn>
               )}
-                </>
-              )}
-            </div>
           ) : null
         }
       >
