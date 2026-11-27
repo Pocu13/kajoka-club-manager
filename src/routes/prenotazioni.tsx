@@ -1137,7 +1137,7 @@ function BookingDetail({
               <Badge tone="info">DA AI</Badge>
             )}
 
-                        {!booking.cancelled &&
+                                       {!booking.cancelled &&
               booking.kind === "partita" && (
                 <Btn
                   variant="primary"
