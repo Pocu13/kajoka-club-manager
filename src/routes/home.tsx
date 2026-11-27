@@ -386,13 +386,7 @@ function HomePage() {
   const booking = court ? (bookingByCourt.get(court.id) ?? null) : null;
   const upcomingBooking = court ? (nextBookingByCourt.get(court.id) ?? null) : null;
 
-  const canPayBooking = Boolean(
-    booking &&
-      !session &&
-      booking.date === todayKey &&
-      currentMinute >= toMin(booking.start) &&
-      currentMinute < toMin(booking.end),
-  );
+  const canPayBooking = Boolean(booking && !session);
 
   useEffect(() => {
     setBookingOnly(false);
