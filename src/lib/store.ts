@@ -1563,12 +1563,14 @@ export const courtSessions = {
           ),
       );
 
-      if (sourceTransactions.length === 0) {
+           const hasOriginalPayment = sourceTransactions.length > 0;
+
+      if (!hasOriginalPayment && deltaAmount < -0.005) {
         return {
           ok: false,
           error:
             `Non trovo un incasso originale collegato a ${player.name}. ` +
-            "Non posso registrare una rettifica senza una transazione di origine.",
+            "Non posso registrare uno storno senza una transazione di origine.",
         };
       }
 
@@ -1590,15 +1592,43 @@ export const courtSessions = {
 
       const originalSplit = originalCash + originalCard;
 
-      const cashDelta =
-        originalSplit > 0
-          ? round(deltaAmount * (originalCash / originalSplit))
-          : 0;
+      let cashDelta = 0;
+      let cardDelta = 0;
 
-      const cardDelta =
-        originalSplit > 0
-          ? round(deltaAmount - cashDelta)
-          : 0;
+      if (hasOriginalPayment && originalSplit > 0) {
+        cashDelta = round(deltaAmount * (originalCash / originalSplit));
+        cardDelta = round(deltaAmount - cashDelta);
+      } else {
+        if (
+          !["contanti", "carta", "misto"].includes(input.paymentMethod)
+        ) {
+          return {
+            ok: false,
+            error: "Seleziona un metodo di pagamento valido.",
+          };
+        }
+
+        const requestedCash =
+          input.paymentMethod === "contanti"
+            ? deltaAmount
+            : input.paymentMethod === "carta"
+              ? 0
+              : round(input.paymentCash);
+
+        if (
+          !Number.isFinite(requestedCash) ||
+          requestedCash < 0 ||
+          requestedCash > deltaAmount
+        ) {
+          return {
+            ok: false,
+            error: "La ripartizione tra contanti e carta non è valida.",
+          };
+        }
+
+        cashDelta = round(requestedCash);
+        cardDelta = round(deltaAmount - cashDelta);
+      }
 
       const method: PaymentMethod =
         Math.abs(cashDelta) > 0.005 &&
@@ -1608,7 +1638,11 @@ export const courtSessions = {
             ? "contanti"
             : Math.abs(cardDelta) > 0.005
               ? "carta"
-              : sourceTransactions[0].method;
+              : hasOriginalPayment
+                ? sourceTransactions[0].method
+                : input.paymentMethod;
+
+      const originalIds = sourceTransactions.map((tx) => tx.id);
 
       const originalIds = sourceTransactions.map((tx) => tx.id);
 
