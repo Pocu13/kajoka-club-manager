@@ -25,7 +25,7 @@ import {
   useDB,
 } from "@/lib/store";
 import { sessionSummary } from "@/lib/whatsapp";
-import { eur, fmtTime } from "@/lib/format";
+import { eur, fmtTime, toMin } from "@/lib/format";
 import type { Booking, Court, Player, Session } from "@/lib/types";
 import { cn } from "@/lib/utils";
 
@@ -33,6 +33,7 @@ type SessionDrawerProps = {
   court: Court | null;
   session: Session | null;
   booking: Booking | null;
+  bookingOnly?: boolean;
   upcomingBooking: Booking | null;
   onClose: () => void;
   onStart: () => void;
@@ -41,13 +42,35 @@ type SessionDrawerProps = {
 
 export function SessionDrawer({
   court,
-  session,
+  session: sourceSession,
   booking,
+  bookingOnly = false,
   upcomingBooking,
   onClose,
   onStart,
   onCheckIn,
 }: SessionDrawerProps) {
+  const session: Session | null =
+    bookingOnly && booking
+      ? {
+          id: `booking-${booking.id}`,
+          courtId: booking.courtId,
+          startedAt: new Date(
+            `${booking.date}T${booking.start}:00`,
+          ).toISOString(),
+          durationMin: Math.max(
+            30,
+            toMin(booking.end) - toMin(booking.start),
+          ),
+          pricingMode: "campo",
+          total: booking.price,
+          players: booking.participants ?? [],
+          closed: false,
+          bookingId: booking.id,
+        }
+      : sourceSession;
+
+  const db = useDB();
   const db = useDB();
   const [selPlayer, setSelPlayer] = useState<string | null>(null);
   const [payOpen, setPayOpen] = useState(false);
