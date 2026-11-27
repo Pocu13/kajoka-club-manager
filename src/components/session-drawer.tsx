@@ -663,11 +663,17 @@ const fixedBookingParticipants = court.type === "padel" && !displayOnly;
                         Giocatori e quote
                       </div>
 
-                      {!fixedBookingParticipants &&
-                        bookingParticipants.length <
-                        {(!displayOnly || editingHistoricalBooking) &&
+                      {(!displayOnly || editingHistoricalBooking) &&
   !fixedBookingParticipants &&
   bookingParticipants.length < bookingParticipantLimit && (
+    <Btn
+      variant="outline"
+      size="sm"
+      onClick={addBookingParticipant}
+    >
+      <Plus className="size-3" /> Aggiungi
+    </Btn>
+  )}
 
                     <div className="space-y-2">
                       {bookingParticipants.map((item, index) => (
