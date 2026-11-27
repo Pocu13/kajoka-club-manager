@@ -9,7 +9,7 @@ import { SessionDrawer } from "@/components/session-drawer";
 import { WhatsAppShare } from "@/components/whatsapp-share";
 import { ExcelBookingImport } from "@/components/excel-booking-import";
 import { bookingMessage } from "@/lib/whatsapp";
-import { Badge, Btn, Drawer, Field, Input, Modal, Panel, Select } from "@/components/ui-kit";
+import { Badge, Btn, Drawer, Field, Input, Modal, Panel, Select, Toggle } from "@/components/ui-kit";
 import { courtSessions, reservations, series, useCurrentUser, useDB, type SeriesScope } from "@/lib/store";
 import { eur } from "@/lib/format";
 import {
@@ -835,7 +835,13 @@ function BookingDetail({
   }, [booking?.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
   if (!booking) return null;
+  const currentDate = dateKey(new Date());
+  const currentMinute = minutesNow(new Date());
 
+  const isBookingInProgress =
+    booking.date === currentDate &&
+    currentMinute >= toMin(booking.start) &&
+    currentMinute < toMin(booking.end);
   const seriesCount = booking.seriesId
     ? db.bookings.filter(
         (b) => b.seriesId === booking.seriesId && !b.cancelled,
