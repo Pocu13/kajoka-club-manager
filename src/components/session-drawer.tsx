@@ -1056,11 +1056,19 @@ export function SessionDrawer({
                                     className="text-danger"
                                     onClick={(event) => {
                                       event.stopPropagation();
-                                      courtSessions.removeExtra(
-                                        session.id,
-                                        p.id,
-                                        extra.productId,
-                                      );
+                                      if (bookingOnly && booking) {
+                                        courtSessions.removeBookingExtra(
+                                          booking.id,
+                                          p.id,
+                                          extra.productId,
+                                        );
+                                      } else {
+                                        courtSessions.removeExtra(
+                                          session.id,
+                                          p.id,
+                                          extra.productId,
+                                        );
+                                      }
                                     }}
                                   >
                                     <Minus className="size-3" />
