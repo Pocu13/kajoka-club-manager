@@ -407,23 +407,13 @@ function BookingsPage() {
         initial={form}
       />
 
-            <BookingDetail
+          <BookingDetail
         booking={selected}
         onClose={() => setDetail(null)}
         onActivate={() => {
           if (!selected) return;
-
-          try {
-            courtSessions.checkIn(selected);
-            setDetail(null);
-            setOperationalBookingId(selected.id);
-          } catch (error) {
-            toast.error(
-              error instanceof Error
-                ? error.message
-                : "Impossibile avviare la sessione",
-            );
-          }
+          setDetail(null);
+          setOperationalBookingId(selected.id);
         }}
         canCancel={
           user?.role === "admin" ||
@@ -435,41 +425,19 @@ function BookingsPage() {
         court={operationalCourt}
         session={operationalSession}
         booking={operationalBooking}
+        bookingOnly={!!operationalBooking && !operationalSession}
         upcomingBooking={null}
-        onClose={() => setOperationalBookingId(null)}
+        onClose={() => {
+          const bookingId = operationalBooking?.id ?? null;
+          setOperationalBookingId(null);
+          if (bookingId) setDetail(bookingId);
+        }}
         onStart={() => setOperationalBookingId(null)}
-        onCheckIn={(b) => {
-          try {
-            courtSessions.checkIn(b);
-          } catch (error) {
-            toast.error(error instanceof Error ? error.message : "Impossibile avviare la sessione");
-          }
-        }}
+        onCheckIn={() => {}}
       />
-      <BookingDetail
-        booking={selected}
-        onClose={() => setDetail(null)}
-        onPay={() => {
-          if (!selected) return;
-          setDetail(null);
-          setOperationalBookingId(selected.id);
-        }}
-        canCancel={
-          user?.role === "admin" ||
-          !!user?.permissions.includes("campi")
-        }
-      />
-            <Btn variant="outline" className="w-full" onClick={() => setPastSlot(null)}>
-              Chiudi
-            </Btn>
-          </div>
-        )}
-      </Drawer>
     </div>
   );
 }
-          <SessionDrawer
-        court={operationalCourt}
 function BookingForm({
   open,
   onClose,
