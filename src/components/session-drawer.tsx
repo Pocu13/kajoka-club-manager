@@ -98,6 +98,10 @@ export function SessionDrawer({
   const [closedTotal, setClosedTotal] = useState("0");
   const [closedPlayers, setClosedPlayers] = useState<Player[]>([]);
   const [editingClosedDetails, setEditingClosedDetails] = useState(false);
+    const [closedPaymentMethod, setClosedPaymentMethod] = useState<
+    "contanti" | "carta" | "misto"
+  >("carta");
+  const [closedPaymentCash, setClosedPaymentCash] = useState("0");
 const [editingHistoricalBooking, setEditingHistoricalBooking] = useState(false);
   useEffect(() => {
     if (!booking) {
