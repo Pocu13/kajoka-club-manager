@@ -756,12 +756,12 @@ function Row({ label, value }: { label: string; value: string }) {
 function BookingDetail({
   booking,
   onClose,
-  onActivate,
+  onPay,
   canCancel,
 }: {
   booking: Booking | null;
   onClose: () => void;
-  onActivate: () => void;
+  onPay: () => void;
   canCancel: boolean;
 }) {
   const db = useDB();
